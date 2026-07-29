@@ -50,13 +50,26 @@ with st.sidebar:
 
     st.divider()
     
-    st.subheader("🛠️ 개발자 퀵 숏컷")
+    st.subheader("🛠️ 개발자 퀵 숏컷 (현재 대화/파일 대상)")
+    
+    # 숏컷 버튼 클릭 시, 이전 대화 내용이 있다면 가장 마지막 대화 내용을 자동으로 함께 묶어줌
     if st.button("🐛 버그 및 에러 원인 분석"):
-        st.session_state.pre_prompt = "첨부된 에러 로그나 코드를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘."
+        last_context = ""
+        if current_messages:
+            last_context = f"\n\n[참고: 직전 대화 내용]\n{current_messages[-1]['content']}"
+        st.session_state.pre_prompt = f"직전 대화나 첨부된 코드를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘.{last_context}"
+
     if st.button("⚡ 코드 성능 최적화 (Refactoring)"):
-        st.session_state.pre_prompt = "이 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘."
+        last_context = ""
+        if current_messages:
+            last_context = f"\n\n[참고: 직전 대화 내용]\n{current_messages[-1]['content']}"
+        st.session_state.pre_prompt = f"위 대화나 첨부된 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{last_context}"
+
     if st.button("🧪 단위 테스트 코드 생성"):
-        st.session_state.pre_prompt = "이 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법을 작성해 줘."
+        last_context = ""
+        if current_messages:
+            last_context = f"\n\n[참고: 직전 대화 내용]\n{current_messages[-1]['content']}"
+        st.session_state.pre_prompt = f"위 대화나 첨부된 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법을 작성해 줘.{last_context}"
 
     st.divider()
     
@@ -123,16 +136,14 @@ if prompt:
             string_data = uploaded_file.getvalue().decode("utf-8")
             file_text = f"\n\n[첨부된 소스코드/파일 '{uploaded_file.name}' 내용]\n```\n{string_data}\n```"
 
-    # =========================================================================
-    # 💡 [핵심] AI에게 부여하는 철저한 코딩 전용 시스템 지시사항(System Prompt)
-    # =========================================================================
+    # 코딩 전용 시스템 규칙 및 프롬프트 조합
     coding_system_rule = (
         "너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야. "
         "사용자의 질문은 **오직 프로그래밍, 소스 코드 작성, 버그 디버깅, 시스템 아키텍처**와 관련된 내용뿐이야. "
         "인사말이나 불필요한 사설은 최대한 배제하고, 즉시 실행 가능한 깨끗한 코드와 핵심 기술적 설명 위주로 답변해. "
         "만약 사용자의 질문이 코딩과 전혀 상관없는 일상 대화나 엉뚱한 내용이라면, "
         "'저는 코딩 전용 AI 비서입니다. 프로그래밍 코드나 에러 관련 내용을 입력해 주세요.'라고 정중히 거절해 줘.\n\n"
-        f"[사용자 요청]\n{prompt}{file_text}"
+        f"[사용자 요청 및 컨텍스트]\n{prompt}{file_text}"
     )
 
     # ==========================================
@@ -198,7 +209,6 @@ if prompt:
             with st.chat_message("assistant"):
                 with st.spinner("Pro 분석 중..."):
                     try:
-                        input_data = [full_prompt_text] # 방어 코드 적용
                         input_data = [coding_system_rule]
                         if image_data: input_data.append(image_data)
                         res_pro = model_pro.generate_content(input_data).text
