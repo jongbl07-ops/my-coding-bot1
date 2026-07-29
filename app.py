@@ -7,14 +7,14 @@ from PIL import Image
 st.set_page_config(page_title="전문 코딩 AI 비교 비서", page_icon="💻", layout="wide")
 
 # ==========================================
-# 1. API 키 설정 (Google Gemini 3세대 & Kimi)
+# 1. API 키 설정 (Google Gemini & Kimi)
 # ==========================================
 try:
-    # 1. 구글 Gemini 설정 (최신 3세대 모델 적용)
+    # 1. 구글 Gemini 설정 (안정적인 정식 모델명 적용으로 404 에러 방지)
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
-    model_flash = genai.GenerativeModel('gemini-3.5-flash')
-    model_pro = genai.GenerativeModel('gemini-3.1-pro')
+    model_flash = genai.GenerativeModel('gemini-1.5-flash')
+    model_pro = genai.GenerativeModel('gemini-1.5-pro')
     
     # 2. Kimi(Moonshot AI) 설정
     kimi_key = st.secrets["KIMI_API_KEY"]
@@ -42,8 +42,8 @@ with st.sidebar:
     ai_mode = st.radio(
         "사용할 AI 분석 엔진:",
         [
-            "Gemini 3.5 Flash (초고속/에이전트)", 
-            "Gemini 3.1 Pro (고난도 추론/심층)", 
+            "Gemini 1.5 Flash (초고속)", 
+            "Gemini 1.5 Pro (고난도 추론)", 
             "Kimi (대용량 소스 분석)",
             "🔥 3개 모델 코딩 동시 비교"
         ],
@@ -169,31 +169,31 @@ if prompt:
     )
 
     # ==========================================
-    # 5. 개발 전용 AI 처리 로직 (Gemini 3.5 Flash & 3.1 Pro)
+    # 5. 개발 전용 AI 처리 로직
     # ==========================================
-    if ai_mode == "Gemini 3.5 Flash (초고속/에이전트)":
+    if ai_mode == "Gemini 1.5 Flash (초고속)":
         with st.chat_message("assistant"):
-            with st.spinner("Gemini 3.5 Flash가 분석 중입니다... ⚡"):
+            with st.spinner("Gemini 1.5 Flash가 분석 중입니다... ⚡"):
                 try:
                     input_data = [coding_system_rule]
                     if image_data: input_data.append(image_data)
                     response = model_flash.generate_content(input_data)
-                    st.markdown("### ⚡ Gemini 3.5 Flash 코드 솔루션")
+                    st.markdown("### ⚡ Gemini 1.5 Flash 코드 솔루션")
                     st.markdown(response.text)
-                    current_messages.append({"role": "assistant", "content": f"**[Gemini 3.5 Flash]**\n\n{response.text}"})
+                    current_messages.append({"role": "assistant", "content": f"**[Gemini 1.5 Flash]**\n\n{response.text}"})
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
-    elif ai_mode == "Gemini 3.1 Pro (고난도 추론/심층)":
+    elif ai_mode == "Gemini 1.5 Pro (고난도 추론)":
         with st.chat_message("assistant"):
-            with st.spinner("Gemini 3.1 Pro가 분석 중입니다... 🧠"):
+            with st.spinner("Gemini 1.5 Pro가 분석 중입니다... 🧠"):
                 try:
                     input_data = [coding_system_rule]
                     if image_data: input_data.append(image_data)
                     response = model_pro.generate_content(input_data)
-                    st.markdown("### 🧠 Gemini 3.1 Pro 코드 솔루션")
+                    st.markdown("### 🧠 Gemini 1.5 Pro 코드 솔루션")
                     st.markdown(response.text)
-                    current_messages.append({"role": "assistant", "content": f"**[Gemini 3.1 Pro]**\n\n{response.text}"})
+                    current_messages.append({"role": "assistant", "content": f"**[Gemini 1.5 Pro]**\n\n{response.text}"})
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
@@ -252,5 +252,5 @@ if prompt:
                     except Exception as e:
                         st.error(f"Kimi 오류: {e}")
 
-        combined_answer = f"**[Gemini 3.5 Flash]**\n\n{res_flash}\n\n---\n\n**[Gemini 3.1 Pro]**\n\n{res_pro}\n\n---\n\n**[Kimi]**\n\n{res_kimi}"
+        combined_answer = f"**[Gemini 1.5 Flash]**\n\n{res_flash}\n\n---\n\n**[Gemini 1.5 Pro]**\n\n{res_pro}\n\n---\n\n**[Kimi]**\n\n{res_kimi}"
         current_messages.append({"role": "assistant", "content": combined_answer})
