@@ -14,7 +14,7 @@ try:
     # 모델명 설정 (사용하시는 모델명으로 지정)
     model = genai.GenerativeModel('gemini-2.5-flash') # 필요시 모델명 수정 가능
 except Exception as e:
-    st.error(لف"API 키 설정 오류: {e}. Streamlit Secrets에 'GEMINI_API_KEY'가 올바르게 등록되었는지 확인하세요.")
+    st.error(f"API 키 설정 오류: {e}. Streamlit Secrets에 'GEMINI_API_KEY'가 올바르게 등록되었는지 확인하세요.")
     st.stop()
 
 # 파일 첨부 창
