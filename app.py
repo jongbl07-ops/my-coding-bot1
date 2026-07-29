@@ -10,13 +10,11 @@ st.set_page_config(page_title="전문 코딩 AI 비교 비서", page_icon="💻"
 # 1. API 키 설정 (Google Gemini 3세대 & Kimi)
 # ==========================================
 try:
-    # 1. 구글 Gemini 설정 (사용자분이 확인해주신 정상 동작 모델명 적용)
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
     model_flash = genai.GenerativeModel('gemini-3.5-flash')
     model_pro = genai.GenerativeModel('gemini-3.1-pro')
     
-    # 2. Kimi(Moonshot AI) 설정
     kimi_key = st.secrets["KIMI_API_KEY"]
     kimi_client = OpenAI(api_key=kimi_key, base_url="https://api.moonshot.ai/v1")
 except Exception as e:
@@ -74,7 +72,7 @@ with st.sidebar:
 
     if st.button("🧪 단위 테스트 코드 생성"):
         context = get_effective_context()
-        st.session_state.pre_prompt = f"아래 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법을 작성해 줘.{context}"
+        st.session_state.pre_prompt = f"아래 코드나 내용을 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법을 작성해 줘.{context}"
 
     st.divider()
     
@@ -169,7 +167,7 @@ if prompt:
     )
 
     # ==========================================
-    # 5. 개발 전용 AI 처리 로직
+    # 5. 개발 전용 AI 처리 로직 (안전장치 적용)
     # ==========================================
     if ai_mode == "Gemini 3.5 Flash (초고속)":
         with st.chat_message("assistant"):
@@ -210,11 +208,15 @@ if prompt:
                     st.markdown(answer)
                     current_messages.append({"role": "assistant", "content": f"**[Kimi]**\n\n{answer}"})
                 except Exception as e:
-                    st.error(f"오류 발생: {e}")
+                    st.error(f"Kimi 오류 (잔액 또는 API 상태를 확인하세요): {e}")
 
     else:
         col1, col2, col3 = st.columns(3)
         
+        res_flash = "Flash 분석 실패"
+        res_pro = "Pro 분석 실패"
+        res_kimi = "Kimi 분석 실패 (잔액 부족 또는 오류)"
+
         with col1:
             with st.chat_message("assistant"):
                 with st.spinner("Flash 분석..."):
@@ -225,7 +227,8 @@ if prompt:
                         st.markdown("### ⚡ Flash")
                         st.markdown(res_flash)
                     except Exception as e:
-                        st.error(f"Flash 오류: {e}")
+                        res_flash = f"Flash 오류: {e}"
+                        st.error(res_flash)
 
         with col2:
             with st.chat_message("assistant"):
@@ -237,20 +240,23 @@ if prompt:
                         st.markdown("### 🧠 Pro")
                         st.markdown(res_pro)
                     except Exception as e:
-                        st.error(f"Pro 오류: {e}")
+                        res_pro = f"Pro 오류: {e}"
+                        st.error(res_pro)
 
         with col3:
             with st.chat_message("assistant"):
                 with st.spinner("Kimi 분석..."):
                     try:
-                        res_kimi = kimi_client.chat.completions.create(
+                        kimi_response = kimi_client.chat.completions.create(
                             model="kimi-k3",
                             messages=[{"role": "user", "content": coding_system_rule}]
-                        ).choices[0].message.content
+                        )
+                        res_kimi = kimi_response.choices[0].message.content
                         st.markdown("### 🌙 Kimi")
                         st.markdown(res_kimi)
                     except Exception as e:
-                        st.error(f"Kimi 오류: {e}")
+                        res_kimi = f"Kimi 오류 (잔액 부족 등): {e}"
+                        st.error(res_kimi)
 
         combined_answer = f"**[Gemini 3.5 Flash]**\n\n{res_flash}\n\n---\n\n**[Gemini 3.1 Pro]**\n\n{res_pro}\n\n---\n\n**[Kimi]**\n\n{res_kimi}"
         current_messages.append({"role": "assistant", "content": combined_answer})
