@@ -10,22 +10,30 @@ st.set_page_config(page_title="트리플 AI 코딩 비교 비서", page_icon="�
 # 1. API 키 설정 (Google Gemini & Kimi)
 # ==========================================
 try:
-    # 1. 구글 Gemini 설정
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
     model_flash = genai.GenerativeModel('gemini-3.5-flash')
     model_pro = genai.GenerativeModel('gemini-3.1-pro')
     
-    # 2. Kimi(Moonshot AI) 설정
     kimi_key = st.secrets["KIMI_API_KEY"]
     kimi_client = OpenAI(api_key=kimi_key, base_url="https://api.moonshot.ai/v1")
-    
 except Exception as e:
     st.error(f"API 키 설정 오류: {e}. Streamlit Secrets에 'GEMINI_API_KEY'와 'KIMI_API_KEY'가 올바르게 등록되었는지 확인하세요.")
     st.stop()
 
 # ==========================================
-# 2. 사이드바 구성 (모드 선택 및 세션 관리)
+# 2. 세션 상태 초기화 (대화 기록 관리)
+# ==========================================
+if "chat_sessions" not in st.session_state:
+    st.session_state.chat_sessions = [{"title": "새로운 작업", "messages": []}]
+
+if "current_session_idx" not in st.session_state:
+    st.session_state.current_session_idx = 0
+
+current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
+
+# ==========================================
+# 3. 사이드바 구성 (작업 관리 및 기록 삭제 기능)
 # ==========================================
 with st.sidebar:
     st.header("⚙️ AI 작동 모드")
@@ -42,20 +50,27 @@ with st.sidebar:
 
     st.divider()
     
-    if "chat_sessions" not in st.session_state:
-        st.session_state.chat_sessions = [{"title": "새로운 작업", "messages": []}]
-    if "current_session_idx" not in st.session_state:
-        st.session_state.current_session_idx = 0
-
+    # 작업 추가 및 관리
     if st.button("➕ 새로운 작업 시작하기"):
         new_session = {"title": f"작업 {len(st.session_state.chat_sessions) + 1}", "messages": []}
         st.session_state.chat_sessions.append(new_session)
         st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
         st.rerun()
 
+    # [신규 기능 1] 현재 작업의 대화/검색 기록만 지우기
+    if st.button("🧹 현재 작업 기록 지우기"):
+        st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"] = []
+        st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = "새로운 작업"
+        st.rerun()
+
+    # [신규 기능 2] 모든 작업 히스토리 전체 삭제하기
+    if st.button("🗑️ 모든 히스토리 전체 삭제"):
+        st.session_state.chat_sessions = [{"title": "새로운 작업", "messages": []}]
+        st.session_state.current_session_idx = 0
+        st.rerun()
+
     st.divider()
     st.subheader("📜 이전 작업 불러오기")
-    current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
     
     for idx, session in enumerate(st.session_state.chat_sessions):
         btn_label = f"💬 {session['title']}"
@@ -66,7 +81,7 @@ with st.sidebar:
             st.rerun()
 
 # ==========================================
-# 3. 메인 화면 디자인
+# 4. 메인 화면 디자인
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"🤖 트리플 AI 코딩 비교 비서 [{current_title}]")
@@ -107,10 +122,9 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
     full_prompt_text = prompt + file_text
 
     # ==========================================
-    # 4. AI 답변 생성 로직 (모드별 분기)
+    # 5. AI 답변 생성 로직 (모드별 분기)
     # ==========================================
     
-    # [모드 1] Gemini 3.5 Flash 단독
     if ai_mode == "Gemini 3.5 Flash 단독":
         with st.chat_message("assistant"):
             with st.spinner("Gemini 3.5 Flash 분석 중... ⏳"):
@@ -124,7 +138,6 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
-    # [모드 2] Gemini 3.1 Pro 단독
     elif ai_mode == "Gemini 3.1 Pro 단독 (심층 추론)":
         with st.chat_message("assistant"):
             with st.spinner("Gemini 3.1 Pro 심층 추론 중... ⏳"):
@@ -138,7 +151,6 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
-    # [모드 3] Kimi 단독
     elif ai_mode == "Kimi 단독 (대용량 문서/코딩)":
         with st.chat_message("assistant"):
             with st.spinner("Kimi 분석 중... ⏳"):
@@ -154,7 +166,6 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
-    # [모드 4] 3개 모델 동시 비교 (화면을 3열로 분할)
     else:
         col1, col2, col3 = st.columns(3)
         
@@ -195,6 +206,5 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
                     except Exception as e:
                         st.error(f"Kimi 오류: {e}")
 
-        # 동시 비교 결과 통합 기록
         combined_answer = f"**[Gemini 3.5 Flash]**\n\n{res_flash}\n\n---\n\n**[Gemini 3.1 Pro]**\n\n{res_pro}\n\n---\n\n**[Kimi]**\n\n{res_kimi}"
         current_messages.append({"role": "assistant", "content": combined_answer})
