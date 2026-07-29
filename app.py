@@ -7,14 +7,16 @@ from PIL import Image
 st.set_page_config(page_title="전문 코딩 AI 비교 비서", page_icon="💻", layout="wide")
 
 # ==========================================
-# 1. API 키 설정
+# 1. API 키 설정 (Google Gemini 3세대 & Kimi)
 # ==========================================
 try:
+    # 1. 구글 Gemini 설정 (최신 3세대 모델 적용)
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
     model_flash = genai.GenerativeModel('gemini-3.5-flash')
     model_pro = genai.GenerativeModel('gemini-3.1-pro')
     
+    # 2. Kimi(Moonshot AI) 설정
     kimi_key = st.secrets["KIMI_API_KEY"]
     kimi_client = OpenAI(api_key=kimi_key, base_url="https://api.moonshot.ai/v1")
 except Exception as e:
@@ -33,15 +35,15 @@ if "current_session_idx" not in st.session_state:
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
 # ==========================================
-# 3. 사이드바 (개발 전용 모드 및 지능형 숏컷 & 히스토리 개별 삭제)
+# 3. 사이드바 (개발 전용 모드 및 숏컷)
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     ai_mode = st.radio(
         "사용할 AI 분석 엔진:",
         [
-            "Gemini 3.5 Flash (빠른 코드 작성)", 
-            "Gemini 3.1 Pro (고난도 로직/추론)", 
+            "Gemini 3.5 Flash (초고속/에이전트)", 
+            "Gemini 3.1 Pro (고난도 추론/심층)", 
             "Kimi (대용량 소스 분석)",
             "🔥 3개 모델 코딩 동시 비교"
         ],
@@ -72,7 +74,7 @@ with st.sidebar:
 
     if st.button("🧪 단위 테스트 코드 생성"):
         context = get_effective_context()
-        st.session_state.pre_prompt = f"아래 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법(명령어 등)을 작성해 줘.{context}"
+        st.session_state.pre_prompt = f"아래 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법을 작성해 줘.{context}"
 
     st.divider()
     
@@ -90,7 +92,6 @@ with st.sidebar:
     st.divider()
     st.subheader("📜 이전 코딩 히스토리 (개별 삭제 가능)")
     
-    # 히스토리 목록을 순회하며 각 항목마다 [선택] 버튼과 [삭제] 버튼을 나란히 배치
     sessions_to_delete = []
     for idx, session in enumerate(st.session_state.chat_sessions):
         col_btn, col_del = st.columns([4, 1])
@@ -104,17 +105,13 @@ with st.sidebar:
                 st.rerun()
                 
         with col_del:
-            # 삭제 버튼 (최소 1개는 남겨두도록 예외 처리)
             if st.button("🗑️", key=f"del_btn_{idx}", help="이 작업 삭제하기"):
                 sessions_to_delete.append(idx)
 
-    # 히스토리 개별 삭제 실행 로직
     if sessions_to_delete:
         for idx in sorted(sessions_to_delete, reverse=True):
-            # 방이 1개만 남았을 때는 지우지 않고 내용만 비움
             if len(st.session_state.chat_sessions) > 1:
                 st.session_state.chat_sessions.pop(idx)
-                # 현재 보고 있던 방을 지운 경우 인덱스 조정
                 if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
                     st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
             else:
@@ -154,7 +151,6 @@ if prompt:
         st.markdown(prompt)
     current_messages.append({"role": "user", "content": prompt})
 
-    # 첨부파일 내용 가공
     file_text = ""
     image_data = None
     if uploaded_file is not None:
@@ -164,7 +160,6 @@ if prompt:
             string_data = uploaded_file.getvalue().decode("utf-8")
             file_text = f"\n\n[첨부된 소스코드/파일 '{uploaded_file.name}' 내용]\n```\n{string_data}\n```"
 
-    # 코딩 전용 시스템 규칙
     coding_system_rule = (
         "너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야. "
         "사용자의 질문은 **오직 프로그래밍, 소스 코드 작성, 버그 디버깅, 단위 테스트 작성**과 관련된 내용뿐이야. "
@@ -174,9 +169,9 @@ if prompt:
     )
 
     # ==========================================
-    # 5. 개발 전용 AI 처리 로직
+    # 5. 개발 전용 AI 처리 로직 (Gemini 3.5 Flash & 3.1 Pro)
     # ==========================================
-    if ai_mode == "Gemini 3.5 Flash (빠른 코드 작성)":
+    if ai_mode == "Gemini 3.5 Flash (초고속/에이전트)":
         with st.chat_message("assistant"):
             with st.spinner("Gemini 3.5 Flash가 분석 중입니다... ⚡"):
                 try:
@@ -189,7 +184,7 @@ if prompt:
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
-    elif ai_mode == "Gemini 3.1 Pro (고난도 로직/추론)":
+    elif ai_mode == "Gemini 3.1 Pro (고난도 추론/심층)":
         with st.chat_message("assistant"):
             with st.spinner("Gemini 3.1 Pro가 분석 중입니다... 🧠"):
                 try:
@@ -222,7 +217,7 @@ if prompt:
         
         with col1:
             with st.chat_message("assistant"):
-                with st.spinner("Flash 분석 중..."):
+                with st.spinner("Flash 분석..."):
                     try:
                         input_data = [coding_system_rule]
                         if image_data: input_data.append(image_data)
@@ -234,7 +229,7 @@ if prompt:
 
         with col2:
             with st.chat_message("assistant"):
-                with st.spinner("Pro 분석 중..."):
+                with st.spinner("Pro 분석..."):
                     try:
                         input_data = [coding_system_rule]
                         if image_data: input_data.append(image_data)
@@ -246,7 +241,7 @@ if prompt:
 
         with col3:
             with st.chat_message("assistant"):
-                with st.spinner("Kimi 분석 중..."):
+                with st.spinner("Kimi 분석..."):
                     try:
                         res_kimi = kimi_client.chat.completions.create(
                             model="kimi-k3",
