@@ -56,7 +56,7 @@ with st.sidebar:
     if st.button("⚡ 코드 성능 최적화 (Refactoring)"):
         st.session_state.pre_prompt = "이 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘."
     if st.button("🧪 단위 테스트 코드 생성"):
-        st.session_state.pre_prompt = "이 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드를 작성해 줘."
+        st.session_state.pre_prompt = "이 코드를 검증할 수 있는 단위 테스트(Unit Test) 코드와 실행 방법을 작성해 줘."
 
     st.divider()
     
@@ -86,24 +86,21 @@ with st.sidebar:
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 AI 코딩 워크벤치 [{current_title}]")
-st.markdown("소스 코드 파일을 업로드하거나 에러 화면을 캡처해 올리면 AI가 즉시 분석하고 수정안을 제시합니다.")
+st.markdown("오직 **프로그래밍, 코드 분석, 에러 디버깅**에만 집중하는 전문 개발 AI 비서입니다.")
 
-# 파일 업로드 (코드 파일 전용 강조)
 uploaded_file = st.file_uploader(
     "📂 소스 코드 또는 에러 캡처 업로드 (.py, .js, .txt, .png 등)", 
     type=['png', 'jpg', 'jpeg', 'txt', 'py', 'json', 'csv', 'js', 'html', 'css', 'sql'],
     key=f"file_uploader_{st.session_state.current_session_idx}"
 )
 
-# 이전 대화 출력
 for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 사이드바 숏컷 버튼 처리
 default_input = st.session_state.pop("pre_prompt", "")
 
-if prompt := st.chat_input("어떤 코드를 구현할까요? 혹은 궁금한 에러를 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}"):
+if prompt := st.chat_input("구현할 코드나 해결할 에러 내용을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}"):
     pass
 elif default_input:
     prompt = default_input
@@ -116,7 +113,7 @@ if prompt:
         st.markdown(prompt)
     current_messages.append({"role": "user", "content": prompt})
 
-    # 첨부파일 가공
+    # 첨부파일 내용 가공
     file_text = ""
     image_data = None
     if uploaded_file is not None:
@@ -126,7 +123,17 @@ if prompt:
             string_data = uploaded_file.getvalue().decode("utf-8")
             file_text = f"\n\n[첨부된 소스코드/파일 '{uploaded_file.name}' 내용]\n```\n{string_data}\n```"
 
-    full_prompt_text = prompt + file_text
+    # =========================================================================
+    # 💡 [핵심] AI에게 부여하는 철저한 코딩 전용 시스템 지시사항(System Prompt)
+    # =========================================================================
+    coding_system_rule = (
+        "너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야. "
+        "사용자의 질문은 **오직 프로그래밍, 소스 코드 작성, 버그 디버깅, 시스템 아키텍처**와 관련된 내용뿐이야. "
+        "인사말이나 불필요한 사설은 최대한 배제하고, 즉시 실행 가능한 깨끗한 코드와 핵심 기술적 설명 위주로 답변해. "
+        "만약 사용자의 질문이 코딩과 전혀 상관없는 일상 대화나 엉뚱한 내용이라면, "
+        "'저는 코딩 전용 AI 비서입니다. 프로그래밍 코드나 에러 관련 내용을 입력해 주세요.'라고 정중히 거절해 줘.\n\n"
+        f"[사용자 요청]\n{prompt}{file_text}"
+    )
 
     # ==========================================
     # 5. 개발 전용 AI 처리 로직
@@ -135,7 +142,7 @@ if prompt:
         with st.chat_message("assistant"):
             with st.spinner("Gemini 3.5 Flash가 코드를 작성 중입니다... ⚡"):
                 try:
-                    input_data = [full_prompt_text]
+                    input_data = [coding_system_rule]
                     if image_data: input_data.append(image_data)
                     response = model_flash.generate_content(input_data)
                     st.markdown("### ⚡ Gemini 3.5 Flash 코드 솔루션")
@@ -148,7 +155,7 @@ if prompt:
         with st.chat_message("assistant"):
             with st.spinner("Gemini 3.1 Pro가 복잡한 알고리즘을 분석 중입니다... 🧠"):
                 try:
-                    input_data = [full_prompt_text]
+                    input_data = [coding_system_rule]
                     if image_data: input_data.append(image_data)
                     response = model_pro.generate_content(input_data)
                     st.markdown("### 🧠 Gemini 3.1 Pro 코드 솔루션")
@@ -163,7 +170,7 @@ if prompt:
                 try:
                     kimi_response = kimi_client.chat.completions.create(
                         model="kimi-k3",
-                        messages=[{"role": "user", "content": full_prompt_text}]
+                        messages=[{"role": "user", "content": coding_system_rule}]
                     )
                     answer = kimi_response.choices[0].message.content
                     st.markdown("### 🌙 Kimi 코드 솔루션")
@@ -179,7 +186,7 @@ if prompt:
             with st.chat_message("assistant"):
                 with st.spinner("Flash 분석 중..."):
                     try:
-                        input_data = [full_prompt_text]
+                        input_data = [coding_system_rule]
                         if image_data: input_data.append(image_data)
                         res_flash = model_flash.generate_content(input_data).text
                         st.markdown("### ⚡ Flash")
@@ -191,7 +198,8 @@ if prompt:
             with st.chat_message("assistant"):
                 with st.spinner("Pro 분석 중..."):
                     try:
-                        input_data = [full_prompt_text]
+                        input_data = [full_prompt_text] # 방어 코드 적용
+                        input_data = [coding_system_rule]
                         if image_data: input_data.append(image_data)
                         res_pro = model_pro.generate_content(input_data).text
                         st.markdown("### 🧠 Pro")
@@ -205,7 +213,7 @@ if prompt:
                     try:
                         res_kimi = kimi_client.chat.completions.create(
                             model="kimi-k3",
-                            messages=[{"role": "user", "content": full_prompt_text}]
+                            messages=[{"role": "user", "content": coding_system_rule}]
                         ).choices[0].message.content
                         st.markdown("### 🌙 Kimi")
                         st.markdown(res_kimi)
