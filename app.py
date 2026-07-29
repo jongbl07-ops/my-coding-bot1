@@ -1,29 +1,27 @@
 import streamlit as st
 import google.generativeai as genai
-from openai import OpenAI  # 퍼플렉시티 연동용
+from openai import OpenAI  # Kimi 연동용
 from PIL import Image
 
 # 페이지 설정 (넓은 화면 레이아웃)
 st.set_page_config(page_title="트리플 AI 코딩 비교 비서", page_icon="🤖", layout="wide")
 
 # ==========================================
-# 1. API 키 설정 (Google & Perplexity)
+# 1. API 키 설정 (Google Gemini & Kimi)
 # ==========================================
 try:
-    # 구글 Gemini 설정 (단일 키로 3.5 Flash와 3.1 Pro 모두 사용 가능)
+    # 1. 구글 Gemini 설정
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
-    
-    # 구글 모델 두 개 준비
     model_flash = genai.GenerativeModel('gemini-3.5-flash')
     model_pro = genai.GenerativeModel('gemini-3.1-pro')
     
-    # 퍼플렉시티(Perplexity) 설정
-    perplexity_key = st.secrets["PERPLEXITY_API_KEY"]
-    pplx_client = OpenAI(api_key=perplexity_key, base_url="https://api.perplexity.ai")
+    # 2. Kimi(Moonshot AI) 설정
+    kimi_key = st.secrets["KIMI_API_KEY"]
+    kimi_client = OpenAI(api_key=kimi_key, base_url="https://api.moonshot.ai/v1")
     
 except Exception as e:
-    st.error(f"API 키 설정 오류: {e}. Streamlit Secrets에 'GEMINI_API_KEY'와 'PERPLEXITY_API_KEY'가 올바르게 등록되었는지 확인하세요.")
+    st.error(f"API 키 설정 오류: {e}. Streamlit Secrets에 'GEMINI_API_KEY'와 'KIMI_API_KEY'가 올바르게 등록되었는지 확인하세요.")
     st.stop()
 
 # ==========================================
@@ -36,7 +34,7 @@ with st.sidebar:
         [
             "Gemini 3.5 Flash 단독", 
             "Gemini 3.1 Pro 단독 (심층 추론)", 
-            "Perplexity 단독 (실시간 검색)", 
+            "Kimi 단독 (대용량 문서/코딩)",
             "🔥 3개 모델 동시 비교 (추천)"
         ],
         index=3
@@ -140,19 +138,19 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
-    # [모드 3] Perplexity 단독
-    elif ai_mode == "Perplexity 단독 (실시간 검색)":
+    # [모드 3] Kimi 단독
+    elif ai_mode == "Kimi 단독 (대용량 문서/코딩)":
         with st.chat_message("assistant"):
-            with st.spinner("Perplexity 실시간 검색 및 분석 중... ⏳"):
+            with st.spinner("Kimi 분석 중... ⏳"):
                 try:
-                    pplx_response = pplx_client.chat.completions.create(
-                        model="sonar",
+                    kimi_response = kimi_client.chat.completions.create(
+                        model="kimi-k3",
                         messages=[{"role": "user", "content": full_prompt_text}]
                     )
-                    answer = pplx_response.choices[0].message.content
-                    st.markdown("### 🔵 Perplexity 답변")
+                    answer = kimi_response.choices[0].message.content
+                    st.markdown("### 🌙 Kimi 답변")
                     st.markdown(answer)
-                    current_messages.append({"role": "assistant", "content": f"**[Perplexity]**\n\n{answer}"})
+                    current_messages.append({"role": "assistant", "content": f"**[Kimi]**\n\n{answer}"})
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 
@@ -162,41 +160,41 @@ if prompt := st.chat_input("어떤 코드를 짜드릴까요?", key=f"user_input
         
         with col1:
             with st.chat_message("assistant"):
-                with st.spinner("Flash 분석 중..."):
+                with st.spinner("Flash 분석..."):
                     try:
                         input_data = [full_prompt_text]
                         if image_data: input_data.append(image_data)
                         res_flash = model_flash.generate_content(input_data).text
-                        st.markdown("### ⚡ Gemini 3.5 Flash")
+                        st.markdown("### ⚡ Flash")
                         st.markdown(res_flash)
                     except Exception as e:
                         st.error(f"Flash 오류: {e}")
 
         with col2:
             with st.chat_message("assistant"):
-                with st.spinner("Pro 추론 중..."):
+                with st.spinner("Pro 추론..."):
                     try:
                         input_data = [full_prompt_text]
                         if image_data: input_data.append(image_data)
                         res_pro = model_pro.generate_content(input_data).text
-                        st.markdown("### 🧠 Gemini 3.1 Pro")
+                        st.markdown("### 🧠 Pro")
                         st.markdown(res_pro)
                     except Exception as e:
                         st.error(f"Pro 오류: {e}")
 
         with col3:
             with st.chat_message("assistant"):
-                with st.spinner("Perplexity 검색 중..."):
+                with st.spinner("Kimi 분석..."):
                     try:
-                        res_pplx = pplx_client.chat.completions.create(
-                            model="sonar",
+                        res_kimi = kimi_client.chat.completions.create(
+                            model="kimi-k3",
                             messages=[{"role": "user", "content": full_prompt_text}]
                         ).choices[0].message.content
-                        st.markdown("### 🔵 Perplexity")
-                        st.markdown(res_pplx)
+                        st.markdown("### 🌙 Kimi")
+                        st.markdown(res_kimi)
                     except Exception as e:
-                        st.error(f"Perplexity 오류: {e}")
+                        st.error(f"Kimi 오류: {e}")
 
         # 동시 비교 결과 통합 기록
-        combined_answer = f"**[Gemini 3.5 Flash]**\n\n{res_flash}\n\n---\n\n**[Gemini 3.1 Pro]**\n\n{res_pro}\n\n---\n\n**[Perplexity]**\n\n{res_pplx}"
+        combined_answer = f"**[Gemini 3.5 Flash]**\n\n{res_flash}\n\n---\n\n**[Gemini 3.1 Pro]**\n\n{res_pro}\n\n---\n\n**[Kimi]**\n\n{res_kimi}"
         current_messages.append({"role": "assistant", "content": combined_answer})
