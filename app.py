@@ -13,8 +13,8 @@ try:
     # 1. 구글 Gemini 설정 (안정적인 정식 모델명 적용으로 404 에러 방지)
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
-    model_flash = genai.GenerativeModel('gemini-1.5-flash')
-    model_pro = genai.GenerativeModel('gemini-1.5-pro')
+    model_flash = genai.GenerativeModel('gemini-3.5-flash')
+    model_pro = genai.GenerativeModel('gemini-3.1-pro')
     
     # 2. Kimi(Moonshot AI) 설정
     kimi_key = st.secrets["KIMI_API_KEY"]
