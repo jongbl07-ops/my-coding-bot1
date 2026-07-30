@@ -31,10 +31,8 @@ def save_history(sessions):
     except Exception:
         pass
 
-# [핵심] 터미널 색상 코드 및 깨진 특수문자 정돈 함수
 def clean_error_log(text):
     if not text: return ""
-    # ANSI 색상 코드 제거 (예: \x1b[90m 등)
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     cleaned = ansi_escape.sub('', text)
     return cleaned
@@ -192,7 +190,7 @@ with st.sidebar:
     history_json = json.dumps(st.session_state.chat_sessions, ensure_ascii=False, indent=2)
     st.download_button("📥 전체 백업 (.json)", data=history_json, file_name="workbench_all_backup.json", mime="application/json")
     
-    uploaded_history = st.file_uploader("📤 백업 복구 (.json)", type=["json"])
+    uploaded_history = st.file_uploader("📤 백업 복구 (.json)", type=["json"], key="backup_uploader")
     if uploaded_history is not None:
         try:
             loaded_data = json.load(uploaded_history)
@@ -243,7 +241,7 @@ st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
 uploaded_file = st.file_uploader(
     "📂 소스 코드 또는 에러 로그 파일/이미지 업로드", 
     type=['png', 'jpg', 'jpeg', 'txt', 'py', 'json', 'csv', 'js', 'html', 'css', 'sql'],
-    key=f"file_uploader_{st.session_state.current_session_idx}"
+    key=f"file_uploader_main_{st.session_state.current_session_idx}"
 )
 
 for msg in current_messages:
@@ -257,93 +255,86 @@ if quick_text:
 prompt = st.chat_input("에러 로그나 프로그래밍 질문을 입력하세요 (엔터로 전송)", key=f"chat_input_memory_{st.session_state.current_session_idx}")
 
 if prompt:
-    # 에러 로그 특수문자 클렌징 적용
-    cleaned_prompt = clean_error_log(prompt)
+    try:
+        cleaned_prompt = clean_error_log(prompt)
 
-    if not current_messages:
-        st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = cleaned_prompt[:15] + "..."
+        if not current_messages:
+            st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = cleaned_prompt[:15] + "..."
+            save_history(st.session_state.chat_sessions)
+
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        chat_history_context = ""
+        if use_memory and len(current_messages) > 0:
+            recent_msgs = current_messages[-6:]
+            chat_history_context = "\n\n[이전 대화 맥락]\n"
+            for m in recent_msgs:
+                role_name = "User" if m["role"] == "user" else "AI"
+                chat_history_context += f"{role_name}: {m['content']}\n"
+                
+        current_messages.append({"role": "user", "content": prompt})
         save_history(st.session_state.chat_sessions)
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    chat_history_context = ""
-    if use_memory and len(current_messages) > 0:
-        recent_msgs = current_messages[-6:]
-        chat_history_context = "\n\n[이전 대화 맥락]\n"
-        for m in recent_msgs:
-            role_name = "User" if m["role"] == "user" else "AI"
-            chat_history_context += f"{role_name}: {m['content']}\n"
-            
-    current_messages.append({"role": "user", "content": prompt})
-    save_history(st.session_state.chat_sessions)
+        file_text, image_data = "", None
+        if uploaded_file:
+            if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg')):
+                image_data = Image.open(uploaded_file)
+            else:
+                file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{clean_error_log(uploaded_file.getvalue().decode('utf-8'))}\n```"
 
-    file_text, image_data = "", None
-    if uploaded_file:
-        if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg')):
-            image_data = Image.open(uploaded_file)
-        else:
-            file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{clean_error_log(uploaded_file.getvalue().decode('utf-8'))}\n```"
-
-    stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
-    
-    system_instruction = (
-        f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 다국어 디버깅/프로그래밍 전문 AI야.{stack_instruction}\n"
-        "사용자가 Python, JavaScript, Node.js 등의 에러 로그나 코드를 제시하면 오류 원인을 분석하고 정확한 수정 코드를 제공해 줘."
-    )
-    
-    user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{cleaned_prompt}{file_text}"
-
-    # ==========================================
-    # 5. 모델 호출 엔진
-    # ==========================================
-    def run_gemini(sys_rule, user_text, img=None):
-        contents = [sys_rule, user_text]
-        if img: contents.append(img)
-        for model_name in st.session_state.gemini_model_list:
-            try:
-                res = genai.GenerativeModel(model_name).generate_content(contents)
-                st.session_state.gemini_quota = {
-                    "status": "정상 작동 중 (Free Tier)",
-                    "last_checked": time.strftime('%H:%M:%S')
-                }
-                return res.text, f"Google Gemini API ({model_name.split('/')[-1]})"
-            except Exception as e:
-                err = str(e).lower()
-                if any(k in err for k in ["429", "quota", "exceeded", "404", "not found", "400", "modalities"]):
-                    continue
-                raise e
-        raise Exception("모든 Gemini 모델이 응답에 실패했습니다.")
-
-    def run_groq(sys_rule, user_text, target_key):
-        model_id = st.session_state.groq_models_dict[target_key]
+        stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
         
-        raw_response = groq_client.chat.completions.with_raw_response.create(
-            model=model_id,
-            messages=[
-                {"role": "system", "content": sys_rule},
-                {"role": "user", "content": user_text}
-            ],
-            temperature=0.3
+        system_instruction = (
+            f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 다국어 디버깅/프로그래밍 전문 AI야.{stack_instruction}\n"
+            "사용자가 Python, JavaScript, Node.js 등의 에러 로그나 코드를 제시하면 오류 원인을 분석하고 정확한 수정 코드를 제공해 줘."
         )
         
-        headers = raw_response.headers
-        st.session_state.groq_quota = {
-            "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
-            "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "정보 없음"),
-            "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-")
-        }
-        
-        response = raw_response.parse()
-        return response.choices[0].message.content, f"Groq Cloud ({model_id})"
+        user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{cleaned_prompt}{file_text}"
 
-    def render_metadata_expander(provider_info, stack_info):
-        with st.expander("🔍 호출 API 출처 및 세부 메타데이터"):
-            st.markdown(f"- **실행 엔진:** `{provider_info}`")
-            st.markdown(f"- **적용 기술 스택:** `{stack_info}`")
-            st.markdown(f"- **대화 문맥 유지:** `{'활성화' if use_memory else '비활성화'}`")
+        def run_gemini(sys_rule, user_text, img=None):
+            contents = [sys_rule, user_text]
+            if img: contents.append(img)
+            for model_name in st.session_state.gemini_model_list:
+                try:
+                    res = genai.GenerativeModel(model_name).generate_content(contents)
+                    st.session_state.gemini_quota = {
+                        "status": "정상 작동 중 (Free Tier)",
+                        "last_checked": time.strftime('%H:%M:%S')
+                    }
+                    return res.text, f"Google Gemini API ({model_name.split('/')[-1]})"
+                except Exception as e:
+                    err = str(e).lower()
+                    if any(k in err for k in ["429", "quota", "exceeded", "404", "not found", "400", "modalities"]):
+                        continue
+                    raise e
+            raise Exception("모든 Gemini 모델이 응답에 실패했습니다.")
 
-    try:
+        def run_groq(sys_rule, user_text, target_key):
+            model_id = st.session_state.groq_models_dict[target_key]
+            raw_response = groq_client.chat.completions.with_raw_response.create(
+                model=model_id,
+                messages=[
+                    {"role": "system", "content": sys_rule},
+                    {"role": "user", "content": user_text}
+                ],
+                temperature=0.3
+            )
+            headers = raw_response.headers
+            st.session_state.groq_quota = {
+                "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
+                "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "정보 없음"),
+                "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-")
+            }
+            response = raw_response.parse()
+            return response.choices[0].message.content, f"Groq Cloud ({model_id})"
+
+        def render_metadata_expander(provider_info, stack_info):
+            with st.expander("🔍 호출 API 출처 및 세부 메타데이터"):
+                st.markdown(f"- **실행 엔진:** `{provider_info}`")
+                st.markdown(f"- **적용 기술 스택:** `{stack_info}`")
+                st.markdown(f"- **대화 문맥 유지:** `{'활성화' if use_memory else '비활성화'}`")
+
         if ai_mode.startswith("⚡ Gemini"):
             with st.chat_message("assistant"):
                 with st.spinner("Gemini가 분석 중입니다..."):
@@ -388,7 +379,6 @@ if prompt:
                     with st.spinner("Llama 분석 중..."):
                         res_groq, groq_name = run_groq(system_instruction, user_content_text, "llama")
                         st.markdown(f"### 🚀 {groq_name}\n{res_groq}")
-            
             render_metadata_expander(f"{gem_name} vs {groq_name}", target_stack)
             current_messages.append({"role": "assistant", "content": f"**[{gem_name}]**\n\n{res_gem}\n\n---\n\n**[{groq_name}]**\n\n{res_groq}"})
 
@@ -406,7 +396,6 @@ if prompt:
                         st.markdown(f"### 🚀 {llama_name} 초안\n{res_llama}")
                             
             st.divider()
-            
             with st.chat_message("assistant"):
                 with st.spinner("🧑‍💻 수석 엔지니어(AI)가 최종 합의안을 작성 중입니다..."):
                     consensus_prompt = (
@@ -417,18 +406,16 @@ if prompt:
                     )
                     res_final, final_name = run_groq(system_instruction, consensus_prompt, "llama")
                     st.markdown(res_final)
-                    
                     render_metadata_expander(f"DeepSeek ({ds_name}) + Llama ({llama_name}) ➔ Evaluated by {final_name}", target_stack)
-                    
                     combined_log = (
                         f"**[🧠 DeepSeek 초안]**\n\n{res_ds}\n\n---\n\n"
                         f"**[🚀 Llama 초안]**\n\n{res_llama}\n\n---\n\n"
                         f"**[🏆 최종 합의안]**\n\n{res_final}"
                     )
                     current_messages.append({"role": "assistant", "content": combined_log})
-                    
-    except Exception as e:
-        st.error(f"오류 발생: {e}")
 
-    save_history(st.session_state.chat_sessions)
-    st.rerun()
+        save_history(st.session_state.chat_sessions)
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"처리 중 오류가 발생했습니다: {e}")
