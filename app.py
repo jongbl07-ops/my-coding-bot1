@@ -9,7 +9,7 @@ import os
 st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_icon="💻", layout="wide")
 
 # ==========================================
-# 0. 자동 저장 및 복구(JSON) 로직 (평상시 화면 유지용)
+# 0. 자동 저장 및 복구(JSON) 로직
 # ==========================================
 HISTORY_FILE = "auto_save_history.json"
 
@@ -73,7 +73,7 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 2. 세션 상태 초기화 (자동 저장된 내역 불러오기)
+# 2. 세션 상태 초기화
 # ==========================================
 if "chat_sessions" not in st.session_state:
     st.session_state.chat_sessions = load_history()
@@ -139,13 +139,13 @@ with st.sidebar:
     if col_new.button("➕ 새 작업"):
         st.session_state.chat_sessions.append({"title": f"작업 {len(st.session_state.chat_sessions) + 1}", "messages": []})
         st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
-        save_history(st.session_state.chat_sessions) # 자동 저장
+        save_history(st.session_state.chat_sessions)
         st.rerun()
 
     if col_clear.button("🧹 화면 지우기"):
         st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"] = []
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = "새로운 코딩 작업"
-        save_history(st.session_state.chat_sessions) # 자동 저장
+        save_history(st.session_state.chat_sessions)
         st.rerun()
 
     st.divider()
@@ -160,7 +160,6 @@ with st.sidebar:
 
     st.divider()
     st.subheader("☁️ 전체 작업 동기화 (클라우드 복구용)")
-    st.caption("며칠 뒤 앱이 절전 모드에 들어가서 히스토리가 날아갔을 때만 사용하세요.")
     history_json = json.dumps(st.session_state.chat_sessions, ensure_ascii=False, indent=2)
     st.download_button("📥 전체 내역 백업 (.json)", data=history_json, file_name="workbench_all_backup.json", mime="application/json")
     
@@ -172,12 +171,11 @@ with st.sidebar:
                 if st.button("🚨 이 파일로 덮어쓰기"):
                     st.session_state.chat_sessions = loaded_data
                     st.session_state.current_session_idx = 0
-                    save_history(st.session_state.chat_sessions) # 덮어쓴 후 자동 저장
+                    save_history(st.session_state.chat_sessions)
                     st.rerun()
         except Exception:
             st.error("파일을 읽는 중 오류가 발생했습니다.")
 
-    # 사이드바 히스토리를 즉시 그리기 위한 예약 공간
     history_placeholder = st.empty()
 
 # ==========================================
@@ -211,7 +209,7 @@ def draw_sidebar_history():
                 else:
                     st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
                     st.session_state.current_session_idx = 0
-            save_history(st.session_state.chat_sessions) # 삭제 후 자동 저장
+            save_history(st.session_state.chat_sessions)
             st.rerun()
 
 # ==========================================
@@ -234,12 +232,10 @@ default_input = st.session_state.pop("pre_prompt", "")
 prompt = st.chat_input("구현할 코드나 해결할 에러 내용을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}") or default_input
 
 if prompt:
-    # 1. 새 질문이 들어오면 즉시 제목 업데이트 및 자동 저장
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
 
-    # 2. 바뀐 제목으로 사이드바 즉시 다시 그리기
     draw_sidebar_history()
 
     with st.chat_message("user"):
@@ -254,7 +250,7 @@ if prompt:
             chat_history_context += f"{role_name}: {m['content']}\n"
             
     current_messages.append({"role": "user", "content": prompt})
-    save_history(st.session_state.chat_sessions) # 질문 추가 시 자동 저장
+    save_history(st.session_state.chat_sessions)
 
     file_text, image_data = "", None
     if uploaded_file:
@@ -263,12 +259,26 @@ if prompt:
         else:
             file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n```"
 
+    # ==========================================
+    # [수정 핵심] 초보자 친화적 가이드 절대 규칙 추가
+    # ==========================================
     stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
-    yapping_instruction = " **[절대 규칙] 인사말이나 부연 설명을 최소화하고 오직 실행 가능한 코드 위주로 출력하라.**" if no_yap_mode else ""
+    
+    if no_yap_mode:
+        yapping_instruction = " **[절대 규칙] 부연 설명을 최소화하고 코드만 출력하되, 반드시 코드 블록 맨 윗줄에 주석으로 '파일명'과 '삽입할 위치'를 명시하라.**"
+    else:
+        yapping_instruction = (
+            "\n\n**[초보자 맞춤형 코드 적용 가이드 필수]**\n"
+            "코드를 제공할 때는 코딩 초보자가 그대로 따라 할 수 있도록 다음 3가지를 반드시 명확하게 짚어줘:\n"
+            "1. **파일명**: 이 코드를 저장할 정확한 파일명 (예: `app.py`를 새로 만드세요 / 기존 `index.html`을 수정하세요)\n"
+            "2. **정확한 위치**: 기존 코드에 넣는다면 '어느 함수 바로 아래', '파일 맨 끝' 등 복사/붙여넣기 할 위치를 초보자 눈높이에서 정확히 설명해.\n"
+            "3. **실행 방법**: 코드를 적용한 뒤 터미널이나 커맨드라인에 어떤 명령어를 쳐야 실행되는지 짧고 명확하게 알려줘."
+        )
     
     coding_system_rule = (
-        f"너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야.{stack_instruction}{yapping_instruction}\n"
+        f"너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야.{stack_instruction}\n"
         "해당 기술 스택의 최신 베스트 프랙티스에 부합하는 깨끗한 코드를 작성해.\n"
+        f"{yapping_instruction}\n"
         f"{chat_history_context}\n"
         f"[현재 사용자 요청]\n{prompt}{file_text}"
     )
@@ -371,6 +381,8 @@ if prompt:
             
             with st.chat_message("assistant"):
                 with st.spinner("🧑‍💻 수석 엔지니어(AI)가 출처를 정리하고 최종 합의안을 작성 중입니다..."):
+                    
+                    # 수석 엔지니어에게도 초보자 가이드 작성을 강제합니다.
                     consensus_prompt = (
                         f"사용자의 코딩 요청: {prompt}{file_text}\n\n"
                         f"--- AI 1 (DeepSeek) 초안 ---\n{res_ds}\n\n"
@@ -381,7 +393,11 @@ if prompt:
                         "- **🧠 DeepSeek 장점 적용**: (어떤 로직을 가져왔는지)\n"
                         "- **🚀 Llama 장점 적용**: (어떤 구조를 가져왔는지)\n\n"
                         "### 🏆 최종 통합 코드\n"
-                        "```\n(통합된 최종 코드)\n```"
+                        "```\n(통합된 최종 코드)\n```\n\n"
+                        "### 📝 초보자 적용 가이드\n"
+                        "1. **파일명**: 이 코드를 저장할 파일명\n"
+                        "2. **붙여넣기 위치**: 기존 파일의 어디에 넣어야 하는지, 혹은 새로 만들어야 하는지\n"
+                        "3. **실행 명령어**: 터미널 실행 방법"
                     )
                     res_final, final_name = run_groq(consensus_prompt, "llama")
                     st.markdown(res_final)
@@ -398,10 +414,8 @@ if prompt:
     except Exception as e:
         st.error(f"오류 발생: {e}")
 
-    # 답변 완료 후 자동 저장 및 화면 리렌더링
     save_history(st.session_state.chat_sessions)
     st.rerun()
 
 else:
-    # 대기 상태일 때 사이드바 히스토리 출력
     draw_sidebar_history()
