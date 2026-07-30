@@ -102,12 +102,11 @@ if "gemini_quota" not in st.session_state:
     }
 
 # ==========================================
-# 3. 사이드바 설정
+# 3. 사이드바 설정 및 히스토리 렌더링
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    # [업그레이드] 선택한 엔진에 맞춰 실시간 쿼터 정보가 동적으로 바뀌어 표시됨
     ai_mode = st.radio(
         "사용할 무료 AI 엔진 선택:",
         [
@@ -198,40 +197,35 @@ with st.sidebar:
         except Exception:
             pass
 
-    history_placeholder = st.empty()
+    # [중복 방지 핵심] 사이드바 히스토리는 여기서 딱 한 번만 렌더링합니다.
+    st.divider()
+    st.subheader("📜 이전 코딩 히스토리")
+    
+    sessions_to_delete = []
+    for idx, session in enumerate(st.session_state.chat_sessions):
+        col_btn, col_del = st.columns([4, 1])
+        with col_btn:
+            btn_label = f"📁 {session['title']}"
+            if idx == st.session_state.current_session_idx:
+                btn_label = f"▶️ {session['title']}"
+            if st.button(btn_label, key=f"session_btn_{idx}"):
+                st.session_state.current_session_idx = idx
+                st.rerun()
+        with col_del:
+            if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
+                sessions_to_delete.append(idx)
 
-def draw_sidebar_history():
-    with history_placeholder.container():
-        st.divider()
-        st.subheader("📜 이전 코딩 히스토리")
-        
-        sessions_to_delete = []
-        for idx, session in enumerate(st.session_state.chat_sessions):
-            col_btn, col_del = st.columns([4, 1])
-            with col_btn:
-                btn_label = f"📁 {session['title']}"
-                if idx == st.session_state.current_session_idx:
-                    btn_label = f"▶️ {session['title']}"
-                if st.button(btn_label, key=f"session_btn_{idx}"):
-                    st.session_state.current_session_idx = idx
-                    st.rerun()
-            with col_del:
-                if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
-                    sessions_to_delete.append(idx)
-
-        if sessions_to_delete:
-            for idx in sorted(sessions_to_delete, reverse=True):
-                if len(st.session_state.chat_sessions) > 1:
-                    st.session_state.chat_sessions.pop(idx)
-                    if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
-                        st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
-                else:
-                    st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
-                    st.session_state.current_session_idx = 0
-            save_history(st.session_state.chat_sessions)
-            st.rerun()
-
-draw_sidebar_history()
+    if sessions_to_delete:
+        for idx in sorted(sessions_to_delete, reverse=True):
+            if len(st.session_state.chat_sessions) > 1:
+                st.session_state.chat_sessions.pop(idx)
+                if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
+                    st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
+            else:
+                st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
+                st.session_state.current_session_idx = 0
+        save_history(st.session_state.chat_sessions)
+        st.rerun()
 
 # ==========================================
 # 4. 메인 화면 UI
@@ -259,8 +253,6 @@ if prompt:
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
-
-    draw_sidebar_history()
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -301,7 +293,6 @@ if prompt:
         for model_name in st.session_state.gemini_model_list:
             try:
                 res = genai.GenerativeModel(model_name).generate_content(contents)
-                # Gemini 호출 성공 시 쿼터 상태 갱신
                 st.session_state.gemini_quota = {
                     "status": "정상 작동 중 (Free Tier)",
                     "last_checked": time.strftime('%H:%M:%S')
