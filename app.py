@@ -7,22 +7,26 @@ from PIL import Image
 st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_icon="💻", layout="wide")
 
 # ==========================================
-# 1. API 키 설정 (Google Gemini + Groq 무료 API)
+# 1. API 키 설정 및 예비 모델 준비
 # ==========================================
 try:
-    # 1) Google Gemini (Flash 3.5 / 1.5)
+    # 1) Google Gemini 
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
-    model_flash = genai.GenerativeModel('gemini-3.5-flash')
     
-    # 2) Groq API (100% 무료 Llama 3.3 70B / OpenAI 호환 SDK)
+    # 메인 모델과 한도 초과 시 대신할 예비 모델을 준비합니다.
+    # (안정성을 위해 공식 지원되는 1.5-flash와 1.5-flash-8b를 사용합니다)
+    model_primary = genai.GenerativeModel('gemini-1.5-flash')
+    model_fallback = genai.GenerativeModel('gemini-1.5-flash-8b') 
+    
+    # 2) Groq API (100% 무료 Llama 3.3 70B)
     groq_key = st.secrets["GROQ_API_KEY"]
     groq_client = OpenAI(
         api_key=groq_key,
         base_url="https://api.groq.com/openai/v1"
     )
 except Exception as e:
-    st.error(f"API 키 설정 오류: {e}. Streamlit Secrets에 'GEMINI_API_KEY'와 'GROQ_API_KEY'를 등록하세요.")
+    st.error(f"API 키 설정 오류: {e}. Streamlit Secrets 설정을 확인하세요.")
     st.stop()
 
 # ==========================================
@@ -44,7 +48,7 @@ with st.sidebar:
     ai_mode = st.radio(
         "사용할 무료 AI 엔진:",
         [
-            "Gemini Flash (초고속)", 
+            "Gemini Flash (자동 전환 탑재)", 
             "Groq Llama 3.3 70B (무료 고성능)",
             "🔥 두 모델 동시 비교"
         ],
@@ -95,8 +99,8 @@ with st.sidebar:
 # 4. 메인 화면 (개발 환경 인터페이스)
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
-st.title(f"💻 100% 무료 AI 코딩 워크벤치 [{current_title}]")
-st.markdown("과금 걱정 없는 **Gemini Flash**와 **Groq Llama 3.3 (70B)** 조합입니다.")
+st.title(f"💻 자동 전환 탑재 AI 워크벤치 [{current_title}]")
+st.markdown("Gemini 한도 초과 시 **자동으로 예비 모델로 전환**되는 무중단 시스템입니다.")
 
 uploaded_file = st.file_uploader(
     "📂 소스 코드 또는 에러 캡처 업로드 (.py, .js, .txt, .png 등)", 
@@ -135,26 +139,48 @@ if prompt:
     coding_system_rule = (
         "너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야. "
         "사용자의 질문은 **오직 프로그래밍, 소스 코드 작성, 버그 디버깅, 단위 테스트 작성**과 관련된 내용뿐이야. "
-        "인사말이나 불필요한 사설은 최대한 배제하고, 즉시 실행 가능한 깨끗한 코드와 핵심 기술적 설명 위주로 답변해. "
-        "만약 참고할 코드가 없다면 '검증할 소스코드가 제공되지 않았습니다.'라고 안내해 줘.\n\n"
+        "인사말이나 불필요한 사설은 최대한 배제하고, 즉시 실행 가능한 깨끗한 코드와 핵심 기술적 설명 위주로 답변해.\n\n"
         f"[사용자 요청 및 컨텍스트]\n{prompt}{file_text}"
     )
 
+    # ---------------------------------------------------------
+    # 공통 Gemini 실행 함수 (한도 초과 시 예비 모델 자동 전환 로직)
+    # ---------------------------------------------------------
+    def run_gemini_with_fallback(inputs):
+        try:
+            # 1차 시도: 메인 모델 (분당 5~15회)
+            res = model_primary.generate_content(inputs)
+            return res.text, "Gemini Flash (Main)"
+        except Exception as e:
+            error_str = str(e).lower()
+            if "429" in error_str or "quota" in error_str or "exceeded" in error_str:
+                # 메인 모델 뻗음 -> 사용자에게 살짝 알리고 예비 모델로 2차 시도
+                st.warning("⚠️ 메인 Gemini 한도(분당 5회) 도달! 자동으로 예비 Gemini(8B)로 전환하여 답변을 가져옵니다 🔄")
+                try:
+                    res_fallback = model_fallback.generate_content(inputs)
+                    return res_fallback.text, "Gemini Flash (Fallback-8B)"
+                except Exception as fallback_e:
+                    raise Exception(f"예비 모델도 한도를 초과했습니다. 물 한잔 드시고 20초 뒤에 다시 시도해주세요! 😅 ({fallback_e})")
+            else:
+                # Quota 에러가 아닌 진짜 에러인 경우
+                raise e
+
     # ==========================================
-    # 5. 무료 AI 처리 로직 (Gemini Flash + Groq)
+    # 5. 무료 AI 처리 로직
     # ==========================================
-    if ai_mode == "Gemini Flash (초고속)":
+    input_data = [coding_system_rule]
+    if image_data: input_data.append(image_data)
+
+    if ai_mode == "Gemini Flash (자동 전환 탑재)":
         with st.chat_message("assistant"):
             with st.spinner("Gemini Flash 분석 중... ⚡"):
                 try:
-                    input_data = [coding_system_rule]
-                    if image_data: input_data.append(image_data)
-                    response = model_flash.generate_content(input_data)
-                    st.markdown("### ⚡ Gemini Flash 솔루션")
-                    st.markdown(response.text)
-                    current_messages.append({"role": "assistant", "content": f"**[Gemini Flash]**\n\n{response.text}"})
+                    res_text, used_model = run_gemini_with_fallback(input_data)
+                    st.markdown(f"### ⚡ {used_model} 솔루션")
+                    st.markdown(res_text)
+                    current_messages.append({"role": "assistant", "content": f"**[{used_model}]**\n\n{res_text}"})
                 except Exception as e:
-                    st.error(f"Gemini 오류 발생: {e}")
+                    st.error(str(e))
 
     elif ai_mode == "Groq Llama 3.3 70B (무료 고성능)":
         with st.chat_message("assistant"):
@@ -172,28 +198,26 @@ if prompt:
                     st.error(f"Groq 오류 발생: {e}")
 
     else:
-        # 두 모델 동시 비교 모드
         col1, col2 = st.columns(2)
         
-        res_flash = "Gemini 분석 실패"
+        res_gemini_text = "Gemini 분석 실패"
+        used_model_name = "Gemini"
         res_groq = "Groq 분석 실패"
 
         with col1:
             with st.chat_message("assistant"):
-                with st.spinner("Gemini Flash 분석..."):
+                with st.spinner("Gemini 분석..."):
                     try:
-                        input_data = [coding_system_rule]
-                        if image_data: input_data.append(image_data)
-                        res_flash = model_flash.generate_content(input_data).text
-                        st.markdown("### ⚡ Gemini Flash")
-                        st.markdown(res_flash)
+                        res_gemini_text, used_model_name = run_gemini_with_fallback(input_data)
+                        st.markdown(f"### ⚡ {used_model_name}")
+                        st.markdown(res_gemini_text)
                     except Exception as e:
-                        res_flash = f"Gemini 오류: {e}"
-                        st.error(res_flash)
+                        res_gemini_text = str(e)
+                        st.error(res_gemini_text)
 
         with col2:
             with st.chat_message("assistant"):
-                with st.spinner("Groq Llama 3.3 분석..."):
+                with st.spinner("Groq 분석..."):
                     try:
                         groq_response = groq_client.chat.completions.create(
                             model="llama-3.3-70b-versatile",
@@ -206,5 +230,5 @@ if prompt:
                         res_groq = f"Groq 오류: {e}"
                         st.error(res_groq)
 
-        combined_answer = f"**[Gemini Flash]**\n\n{res_flash}\n\n---\n\n**[Groq Llama 3.3]**\n\n{res_groq}"
+        combined_answer = f"**[{used_model_name}]**\n\n{res_gemini_text}\n\n---\n\n**[Groq Llama 3.3]**\n\n{res_groq}"
         current_messages.append({"role": "assistant", "content": combined_answer})
