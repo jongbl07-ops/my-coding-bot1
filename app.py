@@ -5,6 +5,7 @@ from PIL import Image
 import json
 import os
 import time
+import re
 
 # 페이지 설정
 st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_icon="💻", layout="wide")
@@ -29,6 +30,14 @@ def save_history(sessions):
             json.dump(sessions, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+# [핵심] 터미널 색상 코드 및 깨진 특수문자 정돈 함수
+def clean_error_log(text):
+    if not text: return ""
+    # ANSI 색상 코드 제거 (예: \x1b[90m 등)
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    cleaned = ansi_escape.sub('', text)
+    return cleaned
 
 # ==========================================
 # 1. API 키 설정 및 실시간 모델 목록 동적 검색
@@ -87,7 +96,6 @@ if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
 
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
-# Quota 정보 추적 변수 초기화
 if "groq_quota" not in st.session_state:
     st.session_state.groq_quota = {
         "remaining_requests": "Groq 사용 전 (대기중)",
@@ -197,7 +205,6 @@ with st.sidebar:
         except Exception:
             pass
 
-    # [중복 방지 핵심] 사이드바 히스토리는 여기서 딱 한 번만 렌더링합니다.
     st.divider()
     st.subheader("📜 이전 코딩 히스토리")
     
@@ -250,8 +257,11 @@ if quick_text:
 prompt = st.chat_input("에러 로그나 프로그래밍 질문을 입력하세요 (엔터로 전송)", key=f"chat_input_memory_{st.session_state.current_session_idx}")
 
 if prompt:
+    # 에러 로그 특수문자 클렌징 적용
+    cleaned_prompt = clean_error_log(prompt)
+
     if not current_messages:
-        st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
+        st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = cleaned_prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
 
     with st.chat_message("user"):
@@ -273,7 +283,7 @@ if prompt:
         if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg')):
             image_data = Image.open(uploaded_file)
         else:
-            file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n```"
+            file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{clean_error_log(uploaded_file.getvalue().decode('utf-8'))}\n```"
 
     stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
     
@@ -282,7 +292,7 @@ if prompt:
         "사용자가 Python, JavaScript, Node.js 등의 에러 로그나 코드를 제시하면 오류 원인을 분석하고 정확한 수정 코드를 제공해 줘."
     )
     
-    user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
+    user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{cleaned_prompt}{file_text}"
 
     # ==========================================
     # 5. 모델 호출 엔진
