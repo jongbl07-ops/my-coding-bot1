@@ -114,7 +114,6 @@ if "gemini_quota" not in st.session_state:
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    # [수정] 상태 변수들을 라디오 딕셔너리보다 반드시 위에 선언
     g_wait = st.session_state.groq_quota['tpd_wait_time']
     groq_status_label = f"🚨 제한중 ({g_wait} 남음)" if g_wait else "✅ 사용 가능"
     gem_status_label = "✅ 사용 가능"
