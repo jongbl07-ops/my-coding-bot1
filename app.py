@@ -25,7 +25,7 @@ try:
             if p in raw_models:
                 sorted_models.append(p)
                 
-        # 나머지 특수 목적 모델(vision, 음성 tts 등)은 텍스트 출력 에러를 내므로 제외하고 추가
+        # 나머지 특수 목적 모델(vision, 음성 tts 등)은 제외하고 추가
         for m in raw_models:
             m_lower = m.lower()
             if m not in sorted_models and "vision" not in m_lower and "tts" not in m_lower:
@@ -33,7 +33,7 @@ try:
                 
         st.session_state.gemini_model_list = sorted_models
 
-    # 2) Groq API (100% 무료 Llama 3.3 70B)
+    # 2) Groq API (100% 무료 - Llama 3.3, DeepSeek R1, Mixtral 등)
     groq_key = st.secrets["GROQ_API_KEY"]
     groq_client = OpenAI(
         api_key=groq_key,
@@ -60,13 +60,16 @@ current_messages = st.session_state.chat_sessions[st.session_state.current_sessi
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     ai_mode = st.radio(
-        "사용할 무료 AI 엔진:",
+        "사용할 무료 AI 엔진 선택:",
         [
-            "Gemini (무한 자동 교체)", 
-            "Groq Llama 3.3 70B (무료 고성능)",
-            "🔥 두 모델 동시 비교"
+            "⚡ Gemini (무한 자동 교체)", 
+            "🚀 Groq: Llama 3.3 (범용 고성능)",
+            "🧠 Groq: DeepSeek R1 (코딩/추론 특화)",
+            "🌪️ Groq: Mixtral 8x7B (빠른 속도)",
+            "🔥 [비교] Gemini vs DeepSeek R1",
+            "🔥 [비교] Gemini vs Llama 3.3"
         ],
-        index=2
+        index=4
     )
 
     st.divider()
@@ -108,7 +111,8 @@ with st.sidebar:
 # 4. 메인 화면
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
-st.title(f"💻 AI 코딩 워크벤치 [{current_title}]")
+st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
+st.markdown("과금 없이 **Gemini, DeepSeek R1, Llama 3.3** 등 최상위 AI 모델을 자유롭게 활용하세요.")
 
 uploaded_file = st.file_uploader(
     "📂 소스 코드 또는 에러 캡처 업로드 (.py, .js, .txt, .png 등)", 
@@ -152,83 +156,101 @@ if prompt:
     )
 
     # ---------------------------------------------------------
-    # 무한 릴레이 교체 엔진 (TTS 에러 등 400 에러까지 커버)
+    # 무한 릴레이 교체 엔진 (Gemini)
     # ---------------------------------------------------------
     def run_gemini_with_infinite_fallback(inputs):
         models_to_try = st.session_state.gemini_model_list
-        
-        # 429(한도초과), 404(모델없음), 400(형식 미지원 - tts 등) 모두 감지
-        skip_keywords = [
-            "429", "quota", "exceeded", 
-            "404", "not found", "no longer available", "deprecated", "invalid",
-            "400", "modalities", "not supported"
-        ]
+        skip_keywords = ["429", "quota", "exceeded", "404", "not found", "no longer available", "deprecated", "invalid", "400", "modalities", "not supported"]
 
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
                 res = model.generate_content(inputs)
-                
                 clean_name = model_name.split('/')[-1]
                 return res.text, f"Gemini ({clean_name})"
-                
             except Exception as e:
                 error_str = str(e).lower()
-                
-                # 에러 목록에 해당하는 문제가 생기면 즉시 다음 모델로 패스
                 if any(kw in error_str for kw in skip_keywords):
                     clean_name = model_name.split('/')[-1]
-                    st.toast(f"🔄 {clean_name} 스킵 (한도 초과 또는 지원 불가) → 다음 모델로...", icon="⚠️")
+                    st.toast(f"🔄 {clean_name} 스킵 (사용 불가/한도 초과) → 다음 모델로...", icon="⚠️")
                     continue
                 else:
-                    # 그 외 코드 작성 자체의 보안 에러 등은 표출
                     raise e
-                    
-        raise Exception("사용 가능한 모든 Gemini 모델의 한도가 초과되었거나 응답에 실패했습니다. 1분 뒤에 다시 시도해 주세요!")
+        raise Exception("사용 가능한 모든 Gemini 모델 응답에 실패했습니다. 1분 뒤 다시 시도해 주세요!")
+
+    # ---------------------------------------------------------
+    # Groq API 통합 호출 함수
+    # ---------------------------------------------------------
+    def run_groq_model(sys_rule, model_id):
+        response = groq_client.chat.completions.create(
+            model=model_id,
+            messages=[{"role": "user", "content": sys_rule}]
+        )
+        return response.choices[0].message.content
 
     # ==========================================
-    # 5. 메인 처리 로직
+    # 5. 메인 처리 로직 (다양한 모드 분기)
     # ==========================================
     input_data = [coding_system_rule]
     if image_data: input_data.append(image_data)
 
-    if ai_mode == "Gemini (무한 자동 교체)":
+    if ai_mode == "⚡ Gemini (무한 자동 교체)":
         with st.chat_message("assistant"):
             with st.spinner("최적의 Gemini 모델을 찾아 분석 중입니다... ⚡"):
                 try:
                     res_text, used_model = run_gemini_with_infinite_fallback(input_data)
-                    st.markdown(f"### ⚡ {used_model} 솔루션")
+                    st.markdown(f"### ⚡ {used_model}")
                     st.markdown(res_text)
                     current_messages.append({"role": "assistant", "content": f"**[{used_model}]**\n\n{res_text}"})
                 except Exception as e:
                     st.error(str(e))
 
-    elif ai_mode == "Groq Llama 3.3 70B (무료 고성능)":
+    elif ai_mode.startswith("🚀 Groq: Llama 3.3"):
         with st.chat_message("assistant"):
-            with st.spinner("Groq Llama 3.3 분석 중... 🚀"):
+            with st.spinner("Llama 3.3 (70B) 분석 중... 🚀"):
                 try:
-                    groq_response = groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": coding_system_rule}]
-                    )
-                    answer = groq_response.choices[0].message.content
-                    st.markdown("### 🚀 Groq Llama 3.3 솔루션")
+                    answer = run_groq_model(coding_system_rule, "llama-3.3-70b-versatile")
+                    st.markdown("### 🚀 Groq Llama 3.3")
                     st.markdown(answer)
                     current_messages.append({"role": "assistant", "content": f"**[Groq Llama 3.3]**\n\n{answer}"})
                 except Exception as e:
                     st.error(f"Groq 오류 발생: {e}")
 
-    else:
-        # 동시 비교 모드
+    elif ai_mode.startswith("🧠 Groq: DeepSeek R1"):
+        with st.chat_message("assistant"):
+            with st.spinner("DeepSeek R1 (70B)이 코드를 깊게 추론 중입니다... 🧠"):
+                try:
+                    answer = run_groq_model(coding_system_rule, "deepseek-r1-distill-llama-70b")
+                    st.markdown("### 🧠 DeepSeek R1")
+                    st.markdown(answer)
+                    current_messages.append({"role": "assistant", "content": f"**[DeepSeek R1]**\n\n{answer}"})
+                except Exception as e:
+                    st.error(f"Groq 오류 발생: {e}")
+
+    elif ai_mode.startswith("🌪️ Groq: Mixtral"):
+        with st.chat_message("assistant"):
+            with st.spinner("Mixtral (8x7B) 분석 중... 🌪️"):
+                try:
+                    answer = run_groq_model(coding_system_rule, "mixtral-8x7b-32768")
+                    st.markdown("### 🌪️ Mixtral 8x7B")
+                    st.markdown(answer)
+                    current_messages.append({"role": "assistant", "content": f"**[Mixtral]**\n\n{answer}"})
+                except Exception as e:
+                    st.error(f"Groq 오류 발생: {e}")
+
+    elif ai_mode.startswith("🔥 [비교]"):
+        # 비교 대상 결정
+        is_deepseek = "DeepSeek R1" in ai_mode
+        groq_model_id = "deepseek-r1-distill-llama-70b" if is_deepseek else "llama-3.3-70b-versatile"
+        groq_display_name = "🧠 DeepSeek R1" if is_deepseek else "🚀 Llama 3.3"
+
         col1, col2 = st.columns(2)
-        
-        res_gemini_text = "Gemini 분석 실패"
-        used_model_name = "Gemini"
-        res_groq = "Groq 분석 실패"
+        res_gemini_text, used_model_name = "Gemini 실패", "Gemini"
+        res_groq = f"{groq_display_name} 실패"
 
         with col1:
             with st.chat_message("assistant"):
-                with st.spinner("Gemini 분석..."):
+                with st.spinner("Gemini 분석 중..."):
                     try:
                         res_gemini_text, used_model_name = run_gemini_with_infinite_fallback(input_data)
                         st.markdown(f"### ⚡ {used_model_name}")
@@ -239,18 +261,14 @@ if prompt:
 
         with col2:
             with st.chat_message("assistant"):
-                with st.spinner("Groq 분석..."):
+                with st.spinner(f"{groq_display_name} 분석 중..."):
                     try:
-                        groq_response = groq_client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
-                            messages=[{"role": "user", "content": coding_system_rule}]
-                        )
-                        res_groq = groq_response.choices[0].message.content
-                        st.markdown("### 🚀 Groq Llama 3.3")
+                        res_groq = run_groq_model(coding_system_rule, groq_model_id)
+                        st.markdown(f"### {groq_display_name}")
                         st.markdown(res_groq)
                     except Exception as e:
                         res_groq = f"Groq 오류: {e}"
                         st.error(res_groq)
 
-        combined_answer = f"**[{used_model_name}]**\n\n{res_gemini_text}\n\n---\n\n**[Groq Llama 3.3]**\n\n{res_groq}"
+        combined_answer = f"**[{used_model_name}]**\n\n{res_gemini_text}\n\n---\n\n**[{groq_display_name}]**\n\n{res_groq}"
         current_messages.append({"role": "assistant", "content": combined_answer})
