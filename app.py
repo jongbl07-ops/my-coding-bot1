@@ -87,7 +87,7 @@ if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
 # ==========================================
-# 3. 사이드바 설정
+# 3. 사이드바 설정 및 히스토리 함수 정의
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -104,7 +104,7 @@ with st.sidebar:
             "🔥 [비교] Gemini vs Groq Llama",
             "🤝 [비교+합의] Groq DeepSeek vs Llama"
         ],
-        index=0  # 기본값 안정적인 Gemini로 추천
+        index=0
     )
 
     st.divider()
@@ -167,43 +167,42 @@ with st.sidebar:
         except Exception:
             pass
 
+    # 히스토리 렌더링 공간 예약
     history_placeholder = st.empty()
 
-def draw_sidebar_history():
-    with history_placeholder.container():
-        st.divider()
-        st.subheader("📜 이전 코딩 히스토리")
-        
-        sessions_to_delete = []
-        for idx, session in enumerate(st.session_state.chat_sessions):
-            col_btn, col_del = st.columns([4, 1])
-            with col_btn:
-                btn_label = f"📁 {session['title']}"
-                if idx == st.session_state.current_session_idx:
-                    btn_label = f"▶️ {session['title']}"
-                if st.button(btn_label, key=f"session_btn_{idx}"):
-                    st.session_state.current_session_idx = idx
-                    st.rerun()
-            with col_del:
-                if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
-                    sessions_to_delete.append(idx)
+# 중복 에러를 막기 위해 히스토리 렌더링 함수는 딱 한 번만 정의하고 실행합니다.
+with history_placeholder.container():
+    st.divider()
+    st.subheader("📜 이전 코딩 히스토리")
+    
+    sessions_to_delete = []
+    for idx, session in enumerate(st.session_state.chat_sessions):
+        col_btn, col_del = st.columns([4, 1])
+        with col_btn:
+            btn_label = f"📁 {session['title']}"
+            if idx == st.session_state.current_session_idx:
+                btn_label = f"▶️ {session['title']}"
+            if st.button(btn_label, key=f"session_btn_{idx}"):
+                st.session_state.current_session_idx = idx
+                st.rerun()
+        with col_del:
+            if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
+                sessions_to_delete.append(idx)
 
-        if sessions_to_delete:
-            for idx in sorted(sessions_to_delete, reverse=True):
-                if len(st.session_state.chat_sessions) > 1:
-                    st.session_state.chat_sessions.pop(idx)
-                    if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
-                        st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
-                else:
-                    st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
-                    st.session_state.current_session_idx = 0
-            save_history(st.session_state.chat_sessions)
-            st.rerun()
-
-draw_sidebar_history()
+    if sessions_to_delete:
+        for idx in sorted(sessions_to_delete, reverse=True):
+            if len(st.session_state.chat_sessions) > 1:
+                st.session_state.chat_sessions.pop(idx)
+                if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
+                    st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
+            else:
+                st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
+                st.session_state.current_session_idx = 0
+        save_history(st.session_state.chat_sessions)
+        st.rerun()
 
 # ==========================================
-# 4. 메인 화면 UI (그냥 엔터만 쳐도 전송되는 st.chat_input 방식)
+# 4. 메인 화면 UI
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
@@ -218,20 +217,16 @@ for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 숏컷 버튼을 눌렀을 때 입력창에 자동으로 텍스트가 들어가게 세팅
 quick_text = st.session_state.pop("quick_prompt", "")
 if quick_text:
     st.session_state[f"chat_input_memory_{st.session_state.current_session_idx}"] = quick_text
 
-# [핵심] 그냥 엔터만 쳐도 바로 전송되는 챗봇 입력창
 prompt = st.chat_input("에러 로그나 프로그래밍 질문을 입력하세요 (엔터로 전송)", key=f"chat_input_memory_{st.session_state.current_session_idx}")
 
 if prompt:
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
-
-    draw_sidebar_history()
 
     with st.chat_message("user"):
         st.markdown(prompt)
