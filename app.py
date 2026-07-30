@@ -25,9 +25,10 @@ try:
             if p in raw_models:
                 sorted_models.append(p)
                 
-        # 나머지 모델들도 예비용으로 뒤에 추가
+        # 나머지 특수 목적 모델(vision, 음성 tts 등)은 텍스트 출력 에러를 내므로 제외하고 추가
         for m in raw_models:
-            if m not in sorted_models and "vision" not in m:
+            m_lower = m.lower()
+            if m not in sorted_models and "vision" not in m_lower and "tts" not in m_lower:
                 sorted_models.append(m)
                 
         st.session_state.gemini_model_list = sorted_models
@@ -151,13 +152,17 @@ if prompt:
     )
 
     # ---------------------------------------------------------
-    # 무한 릴레이 교체 엔진 (404 / 429 모두 처리 가능하도록 강화)
+    # 무한 릴레이 교체 엔진 (TTS 에러 등 400 에러까지 커버)
     # ---------------------------------------------------------
     def run_gemini_with_infinite_fallback(inputs):
         models_to_try = st.session_state.gemini_model_list
         
-        # 스킵할 에러 키워드 목록
-        skip_keywords = ["429", "quota", "exceeded", "404", "not found", "no longer available", "deprecated", "invalid"]
+        # 429(한도초과), 404(모델없음), 400(형식 미지원 - tts 등) 모두 감지
+        skip_keywords = [
+            "429", "quota", "exceeded", 
+            "404", "not found", "no longer available", "deprecated", "invalid",
+            "400", "modalities", "not supported"
+        ]
 
         for model_name in models_to_try:
             try:
@@ -170,13 +175,13 @@ if prompt:
             except Exception as e:
                 error_str = str(e).lower()
                 
-                # 429(한도 초과) 또는 404(모델 중단/없음) 에러 감지 시 즉시 스킵
+                # 에러 목록에 해당하는 문제가 생기면 즉시 다음 모델로 패스
                 if any(kw in error_str for kw in skip_keywords):
                     clean_name = model_name.split('/')[-1]
-                    st.toast(f"🔄 {clean_name} 사용 불가/한도 초과 → 다음 모델로 스킵 중...", icon="⚠️")
+                    st.toast(f"🔄 {clean_name} 스킵 (한도 초과 또는 지원 불가) → 다음 모델로...", icon="⚠️")
                     continue
                 else:
-                    # 질문 자체의 안전성 에러 등은 그대로 표출
+                    # 그 외 코드 작성 자체의 보안 에러 등은 표출
                     raise e
                     
         raise Exception("사용 가능한 모든 Gemini 모델의 한도가 초과되었거나 응답에 실패했습니다. 1분 뒤에 다시 시도해 주세요!")
