@@ -104,7 +104,7 @@ with st.sidebar:
             "🔥 [비교] Gemini vs Groq Llama",
             "🤝 [비교+합의] Groq DeepSeek vs Llama"
         ],
-        index=5
+        index=0  # 기본값 안정적인 Gemini로 추천
     )
 
     st.divider()
@@ -203,7 +203,7 @@ def draw_sidebar_history():
 draw_sidebar_history()
 
 # ==========================================
-# 4. 메인 화면 UI (안정적인 텍스트 박스 + 전송 버튼 방식)
+# 4. 메인 화면 UI (그냥 엔터만 쳐도 전송되는 st.chat_input 방식)
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
@@ -218,20 +218,20 @@ for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 숏컷 버튼으로 입력된 내용이 있다면 텍스트area 기본값으로 세팅
-default_text = st.session_state.pop("quick_prompt", "")
+# 숏컷 버튼을 눌렀을 때 입력창에 자동으로 텍스트가 들어가게 세팅
+quick_text = st.session_state.pop("quick_prompt", "")
+if quick_text:
+    st.session_state[f"chat_input_memory_{st.session_state.current_session_idx}"] = quick_text
 
-# 멈춤 현상을 완벽히 해결하는 텍스트 입력 박스 + 전송 버튼 구조
-with st.form(key=f"chat_form_{st.session_state.current_session_idx}", clear_on_submit=True):
-    user_input = st.text_area("에러 로그나 프로그래밍 질문을 입력하세요:", value=default_text, height=100)
-    submit_btn = st.form_submit_button("🚀 AI 분석 및 답변 요청하기")
+# [핵심] 그냥 엔터만 쳐도 바로 전송되는 챗봇 입력창
+prompt = st.chat_input("에러 로그나 프로그래밍 질문을 입력하세요 (엔터로 전송)", key=f"chat_input_memory_{st.session_state.current_session_idx}")
 
-if submit_btn and user_input.strip():
-    prompt = user_input.strip()
-    
+if prompt:
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
+
+    draw_sidebar_history()
 
     with st.chat_message("user"):
         st.markdown(prompt)
