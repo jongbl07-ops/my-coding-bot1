@@ -33,20 +33,12 @@ try:
     )
     
     if "groq_models_dict" not in st.session_state:
-        # 현재 Groq 서버에서 지원하는 모든 모델 목록을 가져옴
         available_groq_models = [m.id for m in groq_client.models.list().data]
-        
-        # 목록 중 가장 안전한 기본 모델
         fallback_model = available_groq_models[0] if available_groq_models else ""
         
-        # 1. Llama 최신 버전 찾기 (3.3이 없으면 3로 대체)
         llama_model = next((m for m in available_groq_models if 'llama-3.3-70b' in m.lower()), 
                            next((m for m in available_groq_models if 'llama3-70b' in m.lower()), fallback_model))
-        
-        # 2. DeepSeek 최신 버전 찾기 (삭제되었으면 Llama로 자동 대체하여 에러 방지)
         deepseek_model = next((m for m in available_groq_models if 'deepseek' in m.lower()), llama_model)
-        
-        # 3. Mixtral 최신 버전 찾기
         mixtral_model = next((m for m in available_groq_models if 'mixtral' in m.lower()), fallback_model)
         
         st.session_state.groq_models_dict = {
@@ -76,7 +68,6 @@ current_messages = st.session_state.chat_sessions[st.session_state.current_sessi
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    # 현재 연결된 모델을 보여주어 투명하게 확인 가능
     st.caption(f"**Groq 실시간 연결 모델**\n- 🚀 {st.session_state.groq_models_dict['llama']}\n- 🧠 {st.session_state.groq_models_dict['deepseek']}\n- 🌪️ {st.session_state.groq_models_dict['mixtral']}")
     
     ai_mode = st.radio(
@@ -85,9 +76,8 @@ with st.sidebar:
             "⚡ Gemini (무한 자동 교체)", 
             "🚀 Groq: Llama (범용 고성능)",
             "🧠 Groq: DeepSeek (코딩/추론 특화)",
-            "🌪️ Groq: Mixtral (빠른 속도)",
-            "🔥 [비교] Gemini vs DeepSeek",
-            "🔥 [비교] Gemini vs Llama"
+            "🔥 [비교] Gemini vs Groq Llama",
+            "🤝 [비교+합의] Groq DeepSeek vs Llama" # 신규 추가된 모드
         ],
         index=4
     )
@@ -175,10 +165,9 @@ if prompt:
             except Exception as e:
                 err = str(e).lower()
                 if any(k in err for k in ["429", "quota", "exceeded", "404", "not found", "400", "modalities"]):
-                    st.toast(f"🔄 {model_name.split('/')[-1]} 스킵 → 다음 모델로 이동", icon="⚠️")
                     continue
                 raise e
-        raise Exception("모든 Gemini 모델이 응답에 실패했습니다. 잠시 후 시도해 주세요.")
+        raise Exception("모든 Gemini 모델이 응답에 실패했습니다.")
 
     def run_groq(sys_rule, target_key):
         model_id = st.session_state.groq_models_dict[target_key]
@@ -220,38 +209,76 @@ if prompt:
                     current_messages.append({"role": "assistant", "content": f"**[Groq: {m_id}]**\n\n{text}"})
                 except Exception as e: st.error(str(e))
 
-    elif ai_mode.startswith("🌪️ Groq: Mixtral"):
-        with st.chat_message("assistant"):
-            with st.spinner("Mixtral 분석 중..."):
-                try:
-                    text, m_id = run_groq(coding_system_rule, "mixtral")
-                    st.markdown(f"### 🌪️ {m_id}\n{text}")
-                    current_messages.append({"role": "assistant", "content": f"**[Groq: {m_id}]**\n\n{text}"})
-                except Exception as e: st.error(str(e))
-
-    elif ai_mode.startswith("🔥 [비교]"):
-        is_deepseek = "DeepSeek" in ai_mode
-        groq_target = "deepseek" if is_deepseek else "llama"
-        groq_icon = "🧠" if is_deepseek else "🚀"
-
+    elif ai_mode.startswith("🔥 [비교] Gemini vs Groq"):
         col1, col2 = st.columns(2)
-        res_gem, gem_name = "Gemini 실패", "Gemini"
-        res_groq, groq_name = "Groq 실패", "Groq"
-
         with col1:
             with st.chat_message("assistant"):
                 with st.spinner("Gemini 분석 중..."):
                     try:
                         res_gem, gem_name = run_gemini(input_data)
                         st.markdown(f"### ⚡ {gem_name}\n{res_gem}")
-                    except Exception as e: st.error(str(e))
-
+                    except Exception as e: 
+                        res_gem, gem_name = str(e), "Gemini 실패"
+                        st.error(res_gem)
         with col2:
             with st.chat_message("assistant"):
-                with st.spinner(f"Groq 분석 중..."):
+                with st.spinner("Llama 분석 중..."):
                     try:
-                        res_groq, groq_name = run_groq(coding_system_rule, groq_target)
-                        st.markdown(f"### {groq_icon} {groq_name}\n{res_groq}")
-                    except Exception as e: st.error(str(e))
-
+                        res_groq, groq_name = run_groq(coding_system_rule, "llama")
+                        st.markdown(f"### 🚀 {groq_name}\n{res_groq}")
+                    except Exception as e: 
+                        res_groq, groq_name = f"Groq 오류: {e}", "Groq 실패"
+                        st.error(res_groq)
         current_messages.append({"role": "assistant", "content": f"**[{gem_name}]**\n\n{res_gem}\n\n---\n\n**[{groq_name}]**\n\n{res_groq}"})
+
+    elif ai_mode.startswith("🤝 [비교+합의]"):
+        col1, col2 = st.columns(2)
+        
+        # 1단계: DeepSeek와 Llama가 각각 코드를 짭니다.
+        with col1:
+            with st.chat_message("assistant"):
+                with st.spinner("🧠 DeepSeek 코딩 중..."):
+                    try:
+                        res_ds, ds_name = run_groq(coding_system_rule, "deepseek")
+                        st.markdown(f"### 🧠 {ds_name} 초안\n{res_ds}")
+                    except Exception as e:
+                        res_ds, ds_name = str(e), "DeepSeek 실패"
+                        st.error(res_ds)
+        with col2:
+            with st.chat_message("assistant"):
+                with st.spinner("🚀 Llama 코딩 중..."):
+                    try:
+                        res_llama, llama_name = run_groq(coding_system_rule, "llama")
+                        st.markdown(f"### 🚀 {llama_name} 초안\n{res_llama}")
+                    except Exception as e:
+                        res_llama, llama_name = str(e), "Llama 실패"
+                        st.error(res_llama)
+                        
+        st.divider()
+
+        # 2단계: 수석 엔지니어(Llama 3.3)가 두 코드를 바탕으로 최종 합의안을 만듭니다.
+        with st.chat_message("assistant"):
+            with st.spinner("🧑‍💻 수석 엔지니어(AI)가 두 코드를 분석하여 최종 합의안을 작성 중입니다..."):
+                try:
+                    consensus_prompt = (
+                        f"사용자의 코딩 요청: {prompt}{file_text}\n\n"
+                        f"--- AI 1 (DeepSeek)의 초안 ---\n{res_ds}\n\n"
+                        f"--- AI 2 (Llama)의 초안 ---\n{res_llama}\n\n"
+                        "너는 이 프로젝트의 수석 소프트웨어 아키텍트(Staff Engineer)야. "
+                        "위 두 AI가 작성한 코드를 꼼꼼히 비교하고 분석해서 장점만 취합한 가장 완벽하고 실행 가능한 '최종 코드' 하나를 작성해줘. "
+                        "그리고 왜 이런 형태로 두 코드를 합의하고 최적화했는지 핵심적인 이유를 짧게 덧붙여줘."
+                    )
+                    # 수석 엔지니어 역할은 가장 성능이 밸런스 좋은 Llama 모델에게 맡깁니다.
+                    res_final, final_name = run_groq(consensus_prompt, "llama")
+                    st.markdown("### 🏆 수석 엔지니어 최종 합의안 (Best Code)")
+                    st.markdown(res_final)
+                    
+                    # 대화 기록에는 모든 과정을 보기 좋게 저장합니다.
+                    combined_log = (
+                        f"**[🧠 DeepSeek 초안]**\n\n{res_ds}\n\n---\n\n"
+                        f"**[🚀 Llama 초안]**\n\n{res_llama}\n\n---\n\n"
+                        f"**[🏆 최종 합의안]**\n\n{res_final}"
+                    )
+                    current_messages.append({"role": "assistant", "content": combined_log})
+                except Exception as e:
+                    st.error(f"최종 합의 도중 오류 발생: {e}")
