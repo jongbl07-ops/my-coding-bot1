@@ -86,13 +86,27 @@ if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
 
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
+# 세션에 Groq Quota 정보 저장 변수 초기화
+if "groq_quota" not in st.session_state:
+    st.session_state.groq_quota = {
+        "remaining_requests": "측정 전",
+        "remaining_tokens": "측정 전",
+        "reset_tokens": "-"
+    }
+
 # ==========================================
-# 3. 사이드바 설정 및 히스토리 함수 정의
+# 3. 사이드바 설정
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    st.caption(f"**Groq 실시간 연결 모델**\n- 🚀 {st.session_state.groq_models_dict['llama']}\n- 🧠 {st.session_state.groq_models_dict['deepseek']}\n- 🌪️ {st.session_state.groq_models_dict['mixtral']}")
+    # [신규] Groq 실시간 남은 Quota 표시 박스
+    st.info(
+        f"📊 **Groq 실시간 Quota (잔여량)**\n"
+        f"- 남은 요청수(RPD): `{st.session_state.groq_quota['remaining_requests']}`\n"
+        f"- 남은 토큰(TPM): `{st.session_state.groq_quota['remaining_tokens']}`\n"
+        f"- 토큰 리셋까지: `{st.session_state.groq_quota['reset_tokens']}`"
+    )
     
     ai_mode = st.radio(
         "사용할 무료 AI 엔진 선택:",
@@ -167,39 +181,40 @@ with st.sidebar:
         except Exception:
             pass
 
-    # 히스토리 렌더링 공간 예약
     history_placeholder = st.empty()
 
-# 중복 에러를 막기 위해 히스토리 렌더링 함수는 딱 한 번만 정의하고 실행합니다.
-with history_placeholder.container():
-    st.divider()
-    st.subheader("📜 이전 코딩 히스토리")
-    
-    sessions_to_delete = []
-    for idx, session in enumerate(st.session_state.chat_sessions):
-        col_btn, col_del = st.columns([4, 1])
-        with col_btn:
-            btn_label = f"📁 {session['title']}"
-            if idx == st.session_state.current_session_idx:
-                btn_label = f"▶️ {session['title']}"
-            if st.button(btn_label, key=f"session_btn_{idx}"):
-                st.session_state.current_session_idx = idx
-                st.rerun()
-        with col_del:
-            if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
-                sessions_to_delete.append(idx)
+def draw_sidebar_history():
+    with history_placeholder.container():
+        st.divider()
+        st.subheader("📜 이전 코딩 히스토리")
+        
+        sessions_to_delete = []
+        for idx, session in enumerate(st.session_state.chat_sessions):
+            col_btn, col_del = st.columns([4, 1])
+            with col_btn:
+                btn_label = f"📁 {session['title']}"
+                if idx == st.session_state.current_session_idx:
+                    btn_label = f"▶️ {session['title']}"
+                if st.button(btn_label, key=f"session_btn_{idx}"):
+                    st.session_state.current_session_idx = idx
+                    st.rerun()
+            with col_del:
+                if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
+                    sessions_to_delete.append(idx)
 
-    if sessions_to_delete:
-        for idx in sorted(sessions_to_delete, reverse=True):
-            if len(st.session_state.chat_sessions) > 1:
-                st.session_state.chat_sessions.pop(idx)
-                if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
-                    st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
-            else:
-                st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
-                st.session_state.current_session_idx = 0
-        save_history(st.session_state.chat_sessions)
-        st.rerun()
+        if sessions_to_delete:
+            for idx in sorted(sessions_to_delete, reverse=True):
+                if len(st.session_state.chat_sessions) > 1:
+                    st.session_state.chat_sessions.pop(idx)
+                    if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
+                        st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
+                else:
+                    st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
+                    st.session_state.current_session_idx = 0
+            save_history(st.session_state.chat_sessions)
+            st.rerun()
+
+draw_sidebar_history()
 
 # ==========================================
 # 4. 메인 화면 UI
@@ -227,6 +242,8 @@ if prompt:
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
+
+    draw_sidebar_history()
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -259,7 +276,7 @@ if prompt:
     user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
 
     # ==========================================
-    # 5. 모델 호출 엔진
+    # 5. 모델 호출 엔진 (Groq 헤더 추출 기능 추가)
     # ==========================================
     def run_gemini(sys_rule, user_text, img=None):
         contents = [sys_rule, user_text]
@@ -277,7 +294,9 @@ if prompt:
 
     def run_groq(sys_rule, user_text, target_key):
         model_id = st.session_state.groq_models_dict[target_key]
-        response = groq_client.chat.completions.create(
+        
+        # raw response를 가져오기 위해 raw client 사용
+        raw_response = groq_client.chat.completions.with_raw_response.create(
             model=model_id,
             messages=[
                 {"role": "system", "content": sys_rule},
@@ -285,6 +304,16 @@ if prompt:
             ],
             temperature=0.3
         )
+        
+        # Groq 응답 헤더에서 Quota 정보 추출
+        headers = raw_response.headers
+        st.session_state.groq_quota = {
+            "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
+            "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "정보 없음"),
+            "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-")
+        }
+        
+        response = raw_response.parse()
         return response.choices[0].message.content, f"Groq Cloud ({model_id})"
 
     def render_metadata_expander(provider_info, stack_info):
