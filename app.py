@@ -7,28 +7,25 @@ from PIL import Image
 st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_icon="💻", layout="wide")
 
 # ==========================================
-# 1. API 키 설정 및 사용 가능한 모든 모델 검색
+# 1. API 키 설정 및 안정적인 모델 목록 구하기
 # ==========================================
 try:
     # 1) Google Gemini 
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
     
-    # 세션에 사용 가능한 제미나이 모델 목록을 저장 (최초 1회만 검색)
     if "gemini_model_list" not in st.session_state:
-        # generateContent를 지원하는 모든 모델의 이름을 가져옴
         raw_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # 선호하는 순서대로 정렬 (Flash -> 8B -> 기타 모델들)
+        # 현재 정상 무료 지원되는 1.5 계열을 최우선 배치
+        priority_models = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-1.5-flash-8b']
+        
         sorted_models = []
-        priorities = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro']
-        
-        for p in priorities:
-            for m in raw_models:
-                if p in m and m not in sorted_models:
-                    sorted_models.append(m)
-        
-        # 선호 모델 외에 남은 나머지 모든 모델 추가 (최후의 보루)
+        for p in priority_models:
+            if p in raw_models:
+                sorted_models.append(p)
+                
+        # 나머지 모델들도 예비용으로 뒤에 추가
         for m in raw_models:
             if m not in sorted_models and "vision" not in m:
                 sorted_models.append(m)
@@ -57,7 +54,7 @@ if "current_session_idx" not in st.session_state:
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
 # ==========================================
-# 3. 사이드바 (무료 AI 선택)
+# 3. 사이드바
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -107,11 +104,10 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 4. 메인 화면 (개발 환경 인터페이스)
+# 4. 메인 화면
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 AI 코딩 워크벤치 [{current_title}]")
-st.markdown("Gemini 한도 초과 시 **사용 가능한 다른 모델로 계속 자동 교체**하며 답변을 찾아옵니다.")
 
 uploaded_file = st.file_uploader(
     "📂 소스 코드 또는 에러 캡처 업로드 (.py, .js, .txt, .png 등)", 
@@ -155,34 +151,35 @@ if prompt:
     )
 
     # ---------------------------------------------------------
-    # 무한 릴레이 교체 엔진 (모든 모델을 순서대로 테스트)
+    # 무한 릴레이 교체 엔진 (404 / 429 모두 처리 가능하도록 강화)
     # ---------------------------------------------------------
     def run_gemini_with_infinite_fallback(inputs):
         models_to_try = st.session_state.gemini_model_list
         
+        # 스킵할 에러 키워드 목록
+        skip_keywords = ["429", "quota", "exceeded", "404", "not found", "no longer available", "deprecated", "invalid"]
+
         for model_name in models_to_try:
             try:
-                # 현재 순서의 모델로 객체 생성 및 질문
                 model = genai.GenerativeModel(model_name)
                 res = model.generate_content(inputs)
                 
-                # 성공하면 모델 이름 보기 좋게 다듬어서 리턴
                 clean_name = model_name.split('/')[-1]
                 return res.text, f"Gemini ({clean_name})"
                 
             except Exception as e:
                 error_str = str(e).lower()
-                # Quota(한도 초과) 에러가 감지되면 다음 모델로 패스
-                if "429" in error_str or "quota" in error_str or "exceeded" in error_str:
+                
+                # 429(한도 초과) 또는 404(모델 중단/없음) 에러 감지 시 즉시 스킵
+                if any(kw in error_str for kw in skip_keywords):
                     clean_name = model_name.split('/')[-1]
-                    st.toast(f"⚠️ {clean_name} 한도 초과! 다음 예비 모델로 교체합니다...", icon="🔄")
+                    st.toast(f"🔄 {clean_name} 사용 불가/한도 초과 → 다음 모델로 스킵 중...", icon="⚠️")
                     continue
                 else:
-                    # 한도 초과가 아닌 코딩 질문 자체의 에러(Safety 등)면 즉시 중단
+                    # 질문 자체의 안전성 에러 등은 그대로 표출
                     raise e
                     
-        # 리스트에 있는 수많은 제미나이 모델이 전부 다 한도 초과일 때
-        raise Exception("사용 가능한 모든 Gemini 모델의 한도가 초과되었습니다. 1분만 기다렸다가 화면을 지우고 다시 시도해 주세요! 😅")
+        raise Exception("사용 가능한 모든 Gemini 모델의 한도가 초과되었거나 응답에 실패했습니다. 1분 뒤에 다시 시도해 주세요!")
 
     # ==========================================
     # 5. 메인 처리 로직
