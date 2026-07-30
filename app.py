@@ -98,7 +98,8 @@ if "groq_quota" not in st.session_state:
     st.session_state.groq_quota = {
         "remaining_requests": "Groq 사용 전 (대기중)",
         "remaining_tokens": "Groq 사용 전 (대기중)",
-        "reset_tokens": "-"
+        "reset_tokens": "-",
+        "tpd_wait_time": None  # 일일 제한 해제까지 남은 시간 텍스트
     }
 
 if "gemini_quota" not in st.session_state:
@@ -136,11 +137,13 @@ with st.sidebar:
             f"- 마지막 확인: `{st.session_state.gemini_quota['last_checked']}`"
         )
     else:
+        wait_msg = st.session_state.groq_quota['tpd_wait_time']
+        wait_display = f"🚨 **{wait_msg} 뒤 해제**" if wait_msg else "✅ 여유 있음 (정상)"
         st.info(
             f"📊 **Groq 실시간 Quota (잔여량)**\n"
             f"- 남은 요청수(RPD): `{st.session_state.groq_quota['remaining_requests']}`\n"
             f"- 남은 토큰(TPM): `{st.session_state.groq_quota['remaining_tokens']}`\n"
-            f"- 토큰 리셋까지: `{st.session_state.groq_quota['reset_tokens']}`"
+            f"- 하루 한도(TPD) 대기: `{wait_display}`"
         )
 
     st.divider()
@@ -229,8 +232,8 @@ with st.sidebar:
             else:
                 st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
                 st.session_state.current_session_idx = 0
-        save_history(st.session_state.chat_sessions)
-        st.rerun()
+            save_history(st.session_state.chat_sessions)
+            st.rerun()
 
 # ==========================================
 # 4. 메인 화면 UI
@@ -325,20 +328,27 @@ if prompt:
                 st.session_state.groq_quota = {
                     "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
                     "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "정보 없음"),
-                    "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-")
+                    "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-"),
+                    "tpd_wait_time": None
                 }
                 response = raw_response.parse()
                 return response.choices[0].message.content, f"Groq Cloud ({model_id})"
             
             except Exception as api_err:
-                # [핵심] 429 에러(한도 초과)가 발생해도 응답 헤더가 있다면 쿼터 정보를 무조건 캐치해서 갱신함
+                err_str = str(api_err)
+                # 429 에러 메시지에서 "Please try again in XXs" 패턴 추출
+                match = re.search(r'Please try again in ([0-9ms.]+)', err_str)
+                wait_time_str = match.group(1) if match else "잠시 후"
+
+                st.session_state.groq_quota["tpd_wait_time"] = wait_time_str
+
                 if hasattr(api_err, 'response') and api_err.response is not None:
                     headers = api_err.response.headers
-                    st.session_state.groq_quota = {
+                    st.session_state.groq_quota.update({
                         "remaining_requests": headers.get("x-ratelimit-remaining-requests", "0 (한도 초과)"),
                         "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "0 (한도 초과)"),
-                        "reset_tokens": headers.get("x-ratelimit-reset-tokens", "리셋 대기중")
-                    }
+                        "reset_tokens": headers.get("x-ratelimit-reset-tokens", "리셋 대기중"),
+                    })
                 raise api_err
 
         def render_metadata_expander(provider_info, stack_info):
