@@ -10,7 +10,6 @@ st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_
 # 1. API 키 설정 및 실시간 모델 목록 동적 검색
 # ==========================================
 try:
-    # 1) Google Gemini 설정
     gemini_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=gemini_key)
     
@@ -25,7 +24,6 @@ try:
                 sorted_models.append(m)
         st.session_state.gemini_model_list = sorted_models
 
-    # 2) Groq API 설정 및 실시간 모델 매칭
     groq_key = st.secrets["GROQ_API_KEY"]
     groq_client = OpenAI(
         api_key=groq_key,
@@ -63,7 +61,7 @@ if "current_session_idx" not in st.session_state:
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
 # ==========================================
-# 3. 사이드바 (설정 및 숏컷)
+# 3. 사이드바 (설정, 숏컷 및 히스토리 목록)
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -76,30 +74,56 @@ with st.sidebar:
             "⚡ Gemini (무한 자동 교체)", 
             "🚀 Groq: Llama (범용 고성능)",
             "🧠 Groq: DeepSeek (코딩/추론 특화)",
+            "🌪️ Groq: Mixtral (빠른 속도)",
             "🔥 [비교] Gemini vs Groq Llama",
-            "🤝 [비교+합의] Groq DeepSeek vs Llama" # 신규 추가된 모드
+            "🤝 [비교+합의] Groq DeepSeek vs Llama"
         ],
-        index=4
+        index=5
     )
+
+    st.divider()
+
+    st.subheader("🎯 주력 기술 스택 설정")
+    target_stack = st.selectbox(
+        "타겟 언어/프레임워크:",
+        ["General (자동 감지)", "Python / Django / FastApi", "JavaScript / React / Node", "Java / Spring Boot", "C / C++ / Rust", "SQL / Database"]
+    )
+
+    # [신규 기능 1 & 2] 고급 설정 토글
+    st.subheader("⚙️ 고급 동작 설정")
+    no_yap_mode = st.toggle("🤫 설명 생략 (No Yapping) 모드", value=False, help="인사말이나 설명 없이 오직 코드만 출력합니다.")
+    use_memory = st.toggle("🧠 이전 대화 문맥 유지", value=True, help="체크 해제 시 이전 대화를 무시하고 방금 입력한 질문에만 답변합니다.")
 
     st.divider()
     st.subheader("🛠️ 개발자 퀵 숏컷")
     
     def get_effective_context():
-        if not current_messages:
-            return ""
+        if not current_messages: return ""
         for msg in reversed(current_messages):
-            if "분석할 대상 소스 코드" in msg["content"] or "코딩 전용 AI 비서입니다" in msg["content"]:
-                continue
+            if "분석할 대상 소스 코드" in msg["content"] or "코딩 전용 AI 비서입니다" in msg["content"]: continue
             return f"\n\n[참고할 이전 코드/내용]\n{msg['content']}"
         return ""
 
-    if st.button("🐛 버그 및 에러 원인 분석"):
+    if st.button("🐛 버그 및 에러 분석"):
         st.session_state.pre_prompt = f"아래 코드나 에러를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘.{get_effective_context()}"
-
-    if st.button("⚡ 코드 성능 최적화 (Refactoring)"):
+    if st.button("⚡ 코드 리팩토링"):
         st.session_state.pre_prompt = f"아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{get_effective_context()}"
+    if st.button("📖 주석 및 README 생성"):
+        st.session_state.pre_prompt = f"아래 코드에 상세한 주석(Docstring)을 달아주고, 사용법을 설명하는 README 형식으로 정돈해 줘.{get_effective_context()}"
+    if st.button("🛡️ 보안 취약점 점검"):
+        st.session_state.pre_prompt = f"아래 코드의 보안 취약점(메모리 누수, SQL 인젝션 등)을 분석하고 안전한 코드로 수정해 줘.{get_effective_context()}"
 
+    st.divider()
+    
+    st.subheader("💾 세션 백업")
+    if current_messages:
+        curr_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
+        md_text = f"# 💻 AI 코딩 워크벤치 - [{curr_title}]\n\n"
+        for m in current_messages:
+            role_icon = "🧑‍💻 User" if m["role"] == "user" else "🤖 AI Assistant"
+            md_text += f"### {role_icon}\n{m['content']}\n\n---\n\n"
+        st.download_button("현재 대화 내역 저장 (.md)", data=md_text, file_name=f"{curr_title}_backup.md", mime="text/markdown")
+    
     st.divider()
     col_new, col_clear = st.columns(2)
     if col_new.button("➕ 새 작업"):
@@ -112,12 +136,38 @@ with st.sidebar:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = "새로운 코딩 작업"
         st.rerun()
 
+    st.divider()
+    st.subheader("📜 이전 코딩 히스토리")
+    sessions_to_delete = []
+    for idx, session in enumerate(st.session_state.chat_sessions):
+        col_btn, col_del = st.columns([4, 1])
+        with col_btn:
+            btn_label = f"📁 {session['title']}"
+            if idx == st.session_state.current_session_idx:
+                btn_label = f"▶️ {session['title']}"
+            if st.button(btn_label, key=f"session_btn_{idx}"):
+                st.session_state.current_session_idx = idx
+                st.rerun()
+        with col_del:
+            if st.button("🗑️", key=f"del_btn_{idx}", help="이 작업 삭제하기"):
+                sessions_to_delete.append(idx)
+
+    if sessions_to_delete:
+        for idx in sorted(sessions_to_delete, reverse=True):
+            if len(st.session_state.chat_sessions) > 1:
+                st.session_state.chat_sessions.pop(idx)
+                if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
+                    st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
+            else:
+                st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
+                st.session_state.current_session_idx = 0
+        st.rerun()
+
 # ==========================================
 # 4. 메인 화면 UI
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
-st.markdown("과금 걱정 없이 실시간으로 작동하는 최상위 모델을 알아서 찾아 연결합니다.")
 
 uploaded_file = st.file_uploader(
     "📂 소스 코드 캡처 또는 파일 업로드", 
@@ -138,6 +188,20 @@ if prompt:
 
     with st.chat_message("user"):
         st.markdown(prompt)
+    
+    # ---------------------------------------------------------
+    # [신규 기능] 실제 대화 컨텍스트 구성
+    # ---------------------------------------------------------
+    chat_history_context = ""
+    if use_memory and len(current_messages) > 0:
+        # 최근 6개의 메시지만 가져와서 컨텍스트 초과 방지
+        recent_msgs = current_messages[-6:]
+        chat_history_context = "\n\n[이전 대화 맥락 (Context)]\n"
+        for m in recent_msgs:
+            role_name = "User" if m["role"] == "user" else "AI"
+            chat_history_context += f"{role_name}: {m['content']}\n"
+            
+    # 새 질문 추가
     current_messages.append({"role": "user", "content": prompt})
 
     file_text, image_data = "", None
@@ -147,11 +211,14 @@ if prompt:
         else:
             file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n```"
 
+    stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
+    yapping_instruction = " **[절대 규칙] 인사말, 부연 설명, 마크다운 텍스트를 일절 제외하고 오직 실행 가능한 코드 블록만 출력하라.**" if no_yap_mode else ""
+
     coding_system_rule = (
-        "너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야. "
-        "사용자의 질문은 **오직 프로그래밍, 소스 코드 작성, 버그 디버깅, 단위 테스트 작성**과 관련된 내용뿐이야. "
-        "인사말이나 불필요한 사설은 최대한 배제하고, 즉시 실행 가능한 깨끗한 코드와 핵심 기술적 설명 위주로 답변해.\n\n"
-        f"[사용자 요청]\n{prompt}{file_text}"
+        f"너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야.{stack_instruction}{yapping_instruction}\n"
+        "해당 기술 스택의 최신 베스트 프랙티스에 부합하는 깨끗한 코드를 작성해.\n"
+        f"{chat_history_context}\n"
+        f"[현재 사용자 요청]\n{prompt}{file_text}"
     )
 
     # ==========================================
@@ -209,6 +276,15 @@ if prompt:
                     current_messages.append({"role": "assistant", "content": f"**[Groq: {m_id}]**\n\n{text}"})
                 except Exception as e: st.error(str(e))
 
+    elif ai_mode.startswith("🌪️ Groq: Mixtral"):
+        with st.chat_message("assistant"):
+            with st.spinner("Mixtral 분석 중..."):
+                try:
+                    text, m_id = run_groq(coding_system_rule, "mixtral")
+                    st.markdown(f"### 🌪️ {m_id}\n{text}")
+                    current_messages.append({"role": "assistant", "content": f"**[Groq: {m_id}]**\n\n{text}"})
+                except Exception as e: st.error(str(e))
+
     elif ai_mode.startswith("🔥 [비교] Gemini vs Groq"):
         col1, col2 = st.columns(2)
         with col1:
@@ -234,7 +310,6 @@ if prompt:
     elif ai_mode.startswith("🤝 [비교+합의]"):
         col1, col2 = st.columns(2)
         
-        # 1단계: DeepSeek와 Llama가 각각 코드를 짭니다.
         with col1:
             with st.chat_message("assistant"):
                 with st.spinner("🧠 DeepSeek 코딩 중..."):
@@ -256,7 +331,6 @@ if prompt:
                         
         st.divider()
 
-        # 2단계: 수석 엔지니어(Llama 3.3)가 두 코드를 바탕으로 최종 합의안을 만듭니다.
         with st.chat_message("assistant"):
             with st.spinner("🧑‍💻 수석 엔지니어(AI)가 두 코드를 분석하여 최종 합의안을 작성 중입니다..."):
                 try:
@@ -264,16 +338,14 @@ if prompt:
                         f"사용자의 코딩 요청: {prompt}{file_text}\n\n"
                         f"--- AI 1 (DeepSeek)의 초안 ---\n{res_ds}\n\n"
                         f"--- AI 2 (Llama)의 초안 ---\n{res_llama}\n\n"
-                        "너는 이 프로젝트의 수석 소프트웨어 아키텍트(Staff Engineer)야. "
-                        "위 두 AI가 작성한 코드를 꼼꼼히 비교하고 분석해서 장점만 취합한 가장 완벽하고 실행 가능한 '최종 코드' 하나를 작성해줘. "
-                        "그리고 왜 이런 형태로 두 코드를 합의하고 최적화했는지 핵심적인 이유를 짧게 덧붙여줘."
+                        "너는 이 프로젝트의 수석 소프트웨어 아키텍트야. "
+                        "위 두 AI가 작성한 코드를 꼼꼼히 비교하고 분석해서 장점만 취합한 가장 완벽한 '최종 코드' 하나를 작성해줘. "
+                        f"조건: {yapping_instruction if no_yap_mode else '왜 이런 형태로 최적화했는지 이유를 덧붙여줘.'}"
                     )
-                    # 수석 엔지니어 역할은 가장 성능이 밸런스 좋은 Llama 모델에게 맡깁니다.
                     res_final, final_name = run_groq(consensus_prompt, "llama")
                     st.markdown("### 🏆 수석 엔지니어 최종 합의안 (Best Code)")
                     st.markdown(res_final)
                     
-                    # 대화 기록에는 모든 과정을 보기 좋게 저장합니다.
                     combined_log = (
                         f"**[🧠 DeepSeek 초안]**\n\n{res_ds}\n\n---\n\n"
                         f"**[🚀 Llama 초안]**\n\n{res_llama}\n\n---\n\n"
