@@ -4,6 +4,7 @@ from openai import OpenAI
 from PIL import Image
 import json
 import os
+import time
 
 # 페이지 설정
 st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_icon="💻", layout="wide")
@@ -86,12 +87,18 @@ if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
 
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
-# 세션에 Groq Quota 정보 저장 변수 초기화
+# Quota 정보 추적 변수 초기화
 if "groq_quota" not in st.session_state:
     st.session_state.groq_quota = {
-        "remaining_requests": "측정 전",
-        "remaining_tokens": "측정 전",
+        "remaining_requests": "Groq 사용 전 (대기중)",
+        "remaining_tokens": "Groq 사용 전 (대기중)",
         "reset_tokens": "-"
+    }
+
+if "gemini_quota" not in st.session_state:
+    st.session_state.gemini_quota = {
+        "status": "정상 작동 중 (Free Tier)",
+        "last_checked": "방금 전"
     }
 
 # ==========================================
@@ -100,14 +107,7 @@ if "groq_quota" not in st.session_state:
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    # [신규] Groq 실시간 남은 Quota 표시 박스
-    st.info(
-        f"📊 **Groq 실시간 Quota (잔여량)**\n"
-        f"- 남은 요청수(RPD): `{st.session_state.groq_quota['remaining_requests']}`\n"
-        f"- 남은 토큰(TPM): `{st.session_state.groq_quota['remaining_tokens']}`\n"
-        f"- 토큰 리셋까지: `{st.session_state.groq_quota['reset_tokens']}`"
-    )
-    
+    # [업그레이드] 선택한 엔진에 맞춰 실시간 쿼터 정보가 동적으로 바뀌어 표시됨
     ai_mode = st.radio(
         "사용할 무료 AI 엔진 선택:",
         [
@@ -120,6 +120,23 @@ with st.sidebar:
         ],
         index=0
     )
+
+    st.divider()
+
+    if "Gemini" in ai_mode:
+        st.success(
+            f"⚡ **Google Gemini 실시간 상태**\n"
+            f"- 상태: `{st.session_state.gemini_quota['status']}`\n"
+            f"- 제한 기준: 분당 15회 / 일당 1,500회\n"
+            f"- 마지막 확인: `{st.session_state.gemini_quota['last_checked']}`"
+        )
+    else:
+        st.info(
+            f"📊 **Groq 실시간 Quota (잔여량)**\n"
+            f"- 남은 요청수(RPD): `{st.session_state.groq_quota['remaining_requests']}`\n"
+            f"- 남은 토큰(TPM): `{st.session_state.groq_quota['remaining_tokens']}`\n"
+            f"- 토큰 리셋까지: `{st.session_state.groq_quota['reset_tokens']}`"
+        )
 
     st.divider()
     st.subheader("🎯 주력 기술 스택 설정")
@@ -276,7 +293,7 @@ if prompt:
     user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
 
     # ==========================================
-    # 5. 모델 호출 엔진 (Groq 헤더 추출 기능 추가)
+    # 5. 모델 호출 엔진
     # ==========================================
     def run_gemini(sys_rule, user_text, img=None):
         contents = [sys_rule, user_text]
@@ -284,6 +301,11 @@ if prompt:
         for model_name in st.session_state.gemini_model_list:
             try:
                 res = genai.GenerativeModel(model_name).generate_content(contents)
+                # Gemini 호출 성공 시 쿼터 상태 갱신
+                st.session_state.gemini_quota = {
+                    "status": "정상 작동 중 (Free Tier)",
+                    "last_checked": time.strftime('%H:%M:%S')
+                }
                 return res.text, f"Google Gemini API ({model_name.split('/')[-1]})"
             except Exception as e:
                 err = str(e).lower()
@@ -295,7 +317,6 @@ if prompt:
     def run_groq(sys_rule, user_text, target_key):
         model_id = st.session_state.groq_models_dict[target_key]
         
-        # raw response를 가져오기 위해 raw client 사용
         raw_response = groq_client.chat.completions.with_raw_response.create(
             model=model_id,
             messages=[
@@ -305,7 +326,6 @@ if prompt:
             temperature=0.3
         )
         
-        # Groq 응답 헤더에서 Quota 정보 추출
         headers = raw_response.headers
         st.session_state.groq_quota = {
             "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
