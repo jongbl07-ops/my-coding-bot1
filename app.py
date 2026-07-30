@@ -30,7 +30,7 @@ def save_history(sessions):
         pass
 
 # ==========================================
-# 1. API 키 설정 및 실시간 모델 동적 검색
+# 1. API 키 설정 및 실시간 모델 목록 동적 검색
 # ==========================================
 try:
     gemini_key = st.secrets["GEMINI_API_KEY"]
@@ -109,7 +109,6 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🎯 주력 기술 스택 설정")
-    # [수정] JavaScript / Node.js 옵션 추가
     target_stack = st.selectbox("타겟 언어/프레임워크:", ["General (자동 감지)", "JavaScript / Node.js", "Python / FastAPI", "React / Frontend", "Java / Spring Boot", "C++ / Rust", "SQL / Database"])
     
     st.subheader("⚙️ 고급 동작 설정")
@@ -259,23 +258,22 @@ if prompt:
 
     stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
     
-    # [수정 핵심] Node.js, Python, 자바스크립트 등 모든 언어의 에러 로그와 질문을 완벽 분석하도록 확장된 프롬프트
-    coding_system_rule = (
+    system_instruction = (
         f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 다국어 디버깅/프로그래밍 전문 AI야.{stack_instruction}\n"
-        "사용자가 Python, JavaScript, Node.js, HTML/CSS 등의 소스 코드나 터미널 에러 로그(예: SyntaxError, ReferenceError 등)를 제시하거나 프로그래밍 질문을 하면 절대 무시하지 말고 완벽하게 분석해 줘.\n"
-        "1. **에러 로그 분석 요청인 경우**: 어떤 언어/환경(예: Node.js 등)인지 파악하고, 왜 이 에러가 발생했는지 원인과 **정확한 수정 코드**를 제공해 줘.\n"
-        "2. **개념/원리 질문인 경우**: 초보자도 이해하기 쉽게 비유를 들어 친절하게 설명해 줘.\n"
-        f"{chat_history_context}\n"
-        f"[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
+        "사용자가 Python, JavaScript, Node.js 등의 에러 로그나 코드를 제시하면 오류 원인을 분석하고 정확한 수정 코드를 제공해 줘."
     )
+    
+    user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
 
     # ==========================================
-    # 5. 모델 호출 엔진
+    # 5. 모델 호출 엔진 (System과 User 역할을 안전하게 분리)
     # ==========================================
-    def run_gemini(inputs):
+    def run_gemini(sys_rule, user_text, img=None):
+        contents = [sys_rule, user_text]
+        if img: contents.append(img)
         for model_name in st.session_state.gemini_model_list:
             try:
-                res = genai.GenerativeModel(model_name).generate_content(inputs)
+                res = genai.GenerativeModel(model_name).generate_content(contents)
                 return res.text, f"Google Gemini API ({model_name.split('/')[-1]})"
             except Exception as e:
                 err = str(e).lower()
@@ -284,11 +282,16 @@ if prompt:
                 raise e
         raise Exception("모든 Gemini 모델이 응답에 실패했습니다.")
 
-    def run_groq(sys_rule, target_key):
+    def run_groq(sys_rule, user_text, target_key):
         model_id = st.session_state.groq_models_dict[target_key]
+        # [핵심 수정] 시스템 룰과 유저 메시지를 분리하여 서버 타임아웃 및 파싱 오류 방지
         response = groq_client.chat.completions.create(
             model=model_id,
-            messages=[{"role": "user", "content": sys_rule}]
+            messages=[
+                {"role": "system", "content": sys_rule},
+                {"role": "user", "content": user_text}
+            ],
+            temperature=0.3
         )
         return response.choices[0].message.content, f"Groq Cloud ({model_id})"
 
@@ -298,13 +301,11 @@ if prompt:
             st.markdown(f"- **적용 기술 스택:** `{stack_info}`")
             st.markdown(f"- **대화 문맥 유지:** `{'활성화' if use_memory else '비활성화'}`")
 
-    input_data = [coding_system_rule] + ([image_data] if image_data else [])
-
     try:
         if ai_mode.startswith("⚡ Gemini"):
             with st.chat_message("assistant"):
                 with st.spinner("Gemini가 분석 중입니다..."):
-                    text, m_name = run_gemini(input_data)
+                    text, m_name = run_gemini(system_instruction, user_content_text, image_data)
                     st.markdown(f"### ⚡ {m_name}\n{text}")
                     render_metadata_expander(m_name, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_name}]**\n\n{text}"})
@@ -312,7 +313,7 @@ if prompt:
         elif ai_mode.startswith("🚀 Groq: Llama"):
             with st.chat_message("assistant"):
                 with st.spinner("Llama가 분석 중입니다..."):
-                    text, m_id = run_groq(coding_system_rule, "llama")
+                    text, m_id = run_groq(system_instruction, user_content_text, "llama")
                     st.markdown(f"### 🚀 {m_id}\n{text}")
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
@@ -320,7 +321,7 @@ if prompt:
         elif ai_mode.startswith("🧠 Groq: DeepSeek"):
             with st.chat_message("assistant"):
                 with st.spinner("DeepSeek가 추론 중입니다..."):
-                    text, m_id = run_groq(coding_system_rule, "deepseek")
+                    text, m_id = run_groq(system_instruction, user_content_text, "deepseek")
                     st.markdown(f"### 🧠 {m_id}\n{text}")
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
@@ -328,7 +329,7 @@ if prompt:
         elif ai_mode.startswith("🌪️ Groq: Mixtral"):
             with st.chat_message("assistant"):
                 with st.spinner("Mixtral이 분석 중입니다..."):
-                    text, m_id = run_groq(coding_system_rule, "mixtral")
+                    text, m_id = run_groq(system_instruction, user_content_text, "mixtral")
                     st.markdown(f"### 🌪️ {m_id}\n{text}")
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
@@ -338,12 +339,12 @@ if prompt:
             with col1:
                 with st.chat_message("assistant"):
                     with st.spinner("Gemini 분석 중..."):
-                        res_gem, gem_name = run_gemini(input_data)
+                        res_gem, gem_name = run_gemini(system_instruction, user_content_text, image_data)
                         st.markdown(f"### ⚡ {gem_name}\n{res_gem}")
             with col2:
                 with st.chat_message("assistant"):
                     with st.spinner("Llama 분석 중..."):
-                        res_groq, groq_name = run_groq(coding_system_rule, "llama")
+                        res_groq, groq_name = run_groq(system_instruction, user_content_text, "llama")
                         st.markdown(f"### 🚀 {groq_name}\n{res_groq}")
             
             render_metadata_expander(f"{gem_name} vs {groq_name}", target_stack)
@@ -354,12 +355,12 @@ if prompt:
             with col1:
                 with st.chat_message("assistant"):
                     with st.spinner("🧠 DeepSeek 분석 중..."):
-                        res_ds, ds_name = run_groq(coding_system_rule, "deepseek")
+                        res_ds, ds_name = run_groq(system_instruction, user_content_text, "deepseek")
                         st.markdown(f"### 🧠 {ds_name} 초안\n{res_ds}")
             with col2:
                 with st.chat_message("assistant"):
                     with st.spinner("🚀 Llama 분석 중..."):
-                        res_llama, llama_name = run_groq(coding_system_rule, "llama")
+                        res_llama, llama_name = run_groq(system_instruction, user_content_text, "llama")
                         st.markdown(f"### 🚀 {llama_name} 초안\n{res_llama}")
                             
             st.divider()
@@ -372,7 +373,7 @@ if prompt:
                         f"--- AI 2 (Llama) 초안 ---\n{res_llama}\n\n"
                         "두 AI의 답변을 검토하여 가장 정확하고 완벽한 최종 해결책을 작성해 줘."
                     )
-                    res_final, final_name = run_groq(consensus_prompt, "llama")
+                    res_final, final_name = run_groq(system_instruction, consensus_prompt, "llama")
                     st.markdown(res_final)
                     
                     render_metadata_expander(f"DeepSeek ({ds_name}) + Llama ({llama_name}) ➔ Evaluated by {final_name}", target_stack)
