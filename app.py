@@ -122,17 +122,18 @@ with st.sidebar:
         if not current_messages: return ""
         for msg in reversed(current_messages):
             if "분석할 대상 소스 코드" in msg["content"] or "코딩 전용 AI 비서입니다" in msg["content"]: continue
-            return f"\n\n[참고할 이전 코드/내용]\n{msg['content']}"
+            return f"\n\n[참고할 이전 대화]\n{msg['content']}"
         return ""
 
+    # [신규 추가] 질문 특화 숏컷 버튼
+    if st.button("❓ 프로그래밍 개념/원리 질문"):
+        st.session_state.pre_prompt = f"아래 내용에 대해 코딩 초보자도 이해하기 쉽게 비유를 들어서 개념과 원리를 친절하게 설명해 줘.{get_effective_context()}"
     if st.button("🐛 버그 및 에러 분석"):
         st.session_state.pre_prompt = f"아래 코드나 에러를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 설명해 줘.{get_effective_context()}"
     if st.button("⚡ 코드 성능 최적화 (리팩토링)"):
         st.session_state.pre_prompt = f"아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{get_effective_context()}"
     if st.button("📖 주석 및 README 생성"):
         st.session_state.pre_prompt = f"아래 코드에 상세한 주석(Docstring)을 달아주고, 사용법을 README 형식으로 정돈해 줘.{get_effective_context()}"
-    if st.button("🛡️ 보안 취약점 점검 (Security)"):
-        st.session_state.pre_prompt = f"아래 코드의 보안 취약점(메모리 누수, SQL 인젝션 등)을 점검하고 안전하게 수정해 줘.{get_effective_context()}"
 
     st.divider()
     col_new, col_clear = st.columns(2)
@@ -229,7 +230,7 @@ for msg in current_messages:
         st.markdown(msg["content"])
 
 default_input = st.session_state.pop("pre_prompt", "")
-prompt = st.chat_input("구현할 코드나 해결할 에러 내용을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}") or default_input
+prompt = st.chat_input("구현할 코드나 질문 내용을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}") or default_input
 
 if prompt:
     if not current_messages:
@@ -260,24 +261,25 @@ if prompt:
             file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n```"
 
     # ==========================================
-    # [수정 핵심] 초보자 친화적 가이드 절대 규칙 추가
+    # [수정 핵심] 질문과 코드 작성을 스스로 구별하도록 유연한 지시어 적용
     # ==========================================
     stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
     
     if no_yap_mode:
-        yapping_instruction = " **[절대 규칙] 부연 설명을 최소화하고 코드만 출력하되, 반드시 코드 블록 맨 윗줄에 주석으로 '파일명'과 '삽입할 위치'를 명시하라.**"
+        yapping_instruction = " **[절대 규칙] 부연 설명을 최소화하고 핵심만 출력해. 만약 코드를 작성하는 거라면 코드 블록 맨 윗줄에 주석으로 '파일명'과 '위치'를 적어줘.**"
     else:
         yapping_instruction = (
-            "\n\n**[초보자 맞춤형 코드 적용 가이드 필수]**\n"
-            "코드를 제공할 때는 코딩 초보자가 그대로 따라 할 수 있도록 다음 3가지를 반드시 명확하게 짚어줘:\n"
-            "1. **파일명**: 이 코드를 저장할 정확한 파일명 (예: `app.py`를 새로 만드세요 / 기존 `index.html`을 수정하세요)\n"
-            "2. **정확한 위치**: 기존 코드에 넣는다면 '어느 함수 바로 아래', '파일 맨 끝' 등 복사/붙여넣기 할 위치를 초보자 눈높이에서 정확히 설명해.\n"
-            "3. **실행 방법**: 코드를 적용한 뒤 터미널이나 커맨드라인에 어떤 명령어를 쳐야 실행되는지 짧고 명확하게 알려줘."
+            "\n\n**[답변 방식 가이드]**\n"
+            "사용자의 요청이 **'질문/개념 설명'**인지, 아니면 **'코드 작성/수정'**인지 스스로 판단해서 아래 규칙을 따라줘:\n"
+            "1. **단순 개념 질문이나 원리를 묻는 경우**: 파일명, 위치 같은 틀에 얽매이지 말고 예시를 들어 이해하기 쉽게 친절히 설명해줘.\n"
+            "2. **코드를 작성/수정하는 경우**: 초보자가 복사해서 바로 쓸 수 있도록 아래 3가지를 명확히 짚어줘.\n"
+            "   - **파일명**: (예: `app.py` 생성)\n"
+            "   - **붙여넣기 위치**: (예: 파일 맨 아래 추가)\n"
+            "   - **실행 명령어**: (예: `python app.py`)"
         )
     
     coding_system_rule = (
         f"너는 세계 최고 수준의 시니어 소프트웨어 엔지니어이자 프로그래밍 전문 AI야.{stack_instruction}\n"
-        "해당 기술 스택의 최신 베스트 프랙티스에 부합하는 깨끗한 코드를 작성해.\n"
         f"{yapping_instruction}\n"
         f"{chat_history_context}\n"
         f"[현재 사용자 요청]\n{prompt}{file_text}"
@@ -368,36 +370,33 @@ if prompt:
             col1, col2 = st.columns(2)
             with col1:
                 with st.chat_message("assistant"):
-                    with st.spinner("🧠 DeepSeek 코딩 중..."):
+                    with st.spinner("🧠 DeepSeek 작업 중..."):
                         res_ds, ds_name = run_groq(coding_system_rule, "deepseek")
                         st.markdown(f"### 🧠 {ds_name} 초안\n{res_ds}")
             with col2:
                 with st.chat_message("assistant"):
-                    with st.spinner("🚀 Llama 코딩 중..."):
+                    with st.spinner("🚀 Llama 작업 중..."):
                         res_llama, llama_name = run_groq(coding_system_rule, "llama")
                         st.markdown(f"### 🚀 {llama_name} 초안\n{res_llama}")
                             
             st.divider()
             
             with st.chat_message("assistant"):
-                with st.spinner("🧑‍💻 수석 엔지니어(AI)가 출처를 정리하고 최종 합의안을 작성 중입니다..."):
+                with st.spinner("🧑‍💻 수석 엔지니어(AI)가 최종 답변을 정리 중입니다..."):
                     
-                    # 수석 엔지니어에게도 초보자 가이드 작성을 강제합니다.
+                    # 수석 엔지니어에게도 질문/코드 판단 능력을 부여
                     consensus_prompt = (
-                        f"사용자의 코딩 요청: {prompt}{file_text}\n\n"
+                        f"사용자의 요청: {prompt}{file_text}\n\n"
                         f"--- AI 1 (DeepSeek) 초안 ---\n{res_ds}\n\n"
                         f"--- AI 2 (Llama) 초안 ---\n{res_llama}\n\n"
-                        "너는 이 프로젝트의 수석 아키텍트야. 두 코드를 리뷰하고 조합하여 최고의 '최종 합의안'을 만들어줘.\n"
-                        "**반드시 다음 구조로 명확하게 답변해줘:**\n\n"
+                        "너는 수석 아키텍트야. 두 답변을 리뷰하고 조합하여 최고의 '최종 답변'을 만들어줘.\n"
+                        "**만약 코드를 요청한 거라면 아래 양식을 지켜줘:**\n"
                         "### 📊 AI별 채택 분석\n"
-                        "- **🧠 DeepSeek 장점 적용**: (어떤 로직을 가져왔는지)\n"
-                        "- **🚀 Llama 장점 적용**: (어떤 구조를 가져왔는지)\n\n"
-                        "### 🏆 최종 통합 코드\n"
-                        "```\n(통합된 최종 코드)\n```\n\n"
-                        "### 📝 초보자 적용 가이드\n"
-                        "1. **파일명**: 이 코드를 저장할 파일명\n"
-                        "2. **붙여넣기 위치**: 기존 파일의 어디에 넣어야 하는지, 혹은 새로 만들어야 하는지\n"
-                        "3. **실행 명령어**: 터미널 실행 방법"
+                        "- 🧠 DeepSeek 장점: ...\n"
+                        "- 🚀 Llama 장점: ...\n"
+                        "### 🏆 최종 통합 코드\n(코드)\n"
+                        "### 📝 초보자 적용 가이드\n(파일명, 위치, 실행방법)\n\n"
+                        "**하지만 단순한 개념 질문이라면, 위 양식에 얽매이지 말고 두 AI의 설명을 합쳐서 가장 이해하기 쉽게 설명해 줘.**"
                     )
                     res_final, final_name = run_groq(consensus_prompt, "llama")
                     st.markdown(res_final)
@@ -407,7 +406,7 @@ if prompt:
                     combined_log = (
                         f"**[🧠 DeepSeek 초안]**\n\n{res_ds}\n\n---\n\n"
                         f"**[🚀 Llama 초안]**\n\n{res_llama}\n\n---\n\n"
-                        f"**[🏆 최종 합의안 & 출처 분석]**\n\n{res_final}"
+                        f"**[🏆 최종 답변 & 출처 분석]**\n\n{res_final}"
                     )
                     current_messages.append({"role": "assistant", "content": combined_log})
                     
