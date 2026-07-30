@@ -312,22 +312,34 @@ if prompt:
 
         def run_groq(sys_rule, user_text, target_key):
             model_id = st.session_state.groq_models_dict[target_key]
-            raw_response = groq_client.chat.completions.with_raw_response.create(
-                model=model_id,
-                messages=[
-                    {"role": "system", "content": sys_rule},
-                    {"role": "user", "content": user_text}
-                ],
-                temperature=0.3
-            )
-            headers = raw_response.headers
-            st.session_state.groq_quota = {
-                "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
-                "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "정보 없음"),
-                "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-")
-            }
-            response = raw_response.parse()
-            return response.choices[0].message.content, f"Groq Cloud ({model_id})"
+            try:
+                raw_response = groq_client.chat.completions.with_raw_response.create(
+                    model=model_id,
+                    messages=[
+                        {"role": "system", "content": sys_rule},
+                        {"role": "user", "content": user_text}
+                    ],
+                    temperature=0.3
+                )
+                headers = raw_response.headers
+                st.session_state.groq_quota = {
+                    "remaining_requests": headers.get("x-ratelimit-remaining-requests", "정보 없음"),
+                    "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "정보 없음"),
+                    "reset_tokens": headers.get("x-ratelimit-reset-tokens", "-")
+                }
+                response = raw_response.parse()
+                return response.choices[0].message.content, f"Groq Cloud ({model_id})"
+            
+            except Exception as api_err:
+                # [핵심] 429 에러(한도 초과)가 발생해도 응답 헤더가 있다면 쿼터 정보를 무조건 캐치해서 갱신함
+                if hasattr(api_err, 'response') and api_err.response is not None:
+                    headers = api_err.response.headers
+                    st.session_state.groq_quota = {
+                        "remaining_requests": headers.get("x-ratelimit-remaining-requests", "0 (한도 초과)"),
+                        "remaining_tokens": headers.get("x-ratelimit-remaining-tokens", "0 (한도 초과)"),
+                        "reset_tokens": headers.get("x-ratelimit-reset-tokens", "리셋 대기중")
+                    }
+                raise api_err
 
         def render_metadata_expander(provider_info, stack_info):
             with st.expander("🔍 호출 API 출처 및 세부 메타데이터"):
