@@ -221,4 +221,4 @@ if prompt:
         if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg')):
             image_data = Image.open(uploaded_file)
         else:
-            file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n
+            file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n```"
