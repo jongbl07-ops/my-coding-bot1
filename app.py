@@ -125,14 +125,12 @@ with st.sidebar:
             return f"\n\n[참고할 이전 대화]\n{msg['content']}"
         return ""
 
-    if st.button("❓ 프로그래밍 개념/원리 질문"):
-        st.session_state.pre_prompt = f"아래 내용에 대해 코딩 초보자도 이해하기 쉽게 비유를 들어서 개념과 원리를 친절하게 설명해 줘.{get_effective_context()}"
-    if st.button("🐛 버그 및 에러 분석"):
-        st.session_state.pre_prompt = f"아래 코드나 에러를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 설명해 줘.{get_effective_context()}"
-    if st.button("⚡ 코드 성능 최적화 (리팩토링)"):
-        st.session_state.pre_prompt = f"아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{get_effective_context()}"
-    if st.button("📖 주석 및 README 생성"):
-        st.session_state.pre_prompt = f"아래 코드에 상세한 주석(Docstring)을 달아주고, 사용법을 README 형식으로 정돈해 줘.{get_effective_context()}"
+    if st.button("❓ 개념/원리 질문하기"):
+        st.session_state.user_triggered_prompt = f"아래 내용에 대해 코딩 초보자도 이해하기 쉽게 비유를 들어서 개념과 원리를 친절하게 설명해 줘.{get_effective_context()}"
+    if st.button("🐛 에러 분석 및 디버깅"):
+        st.session_state.user_triggered_prompt = f"아래 에러나 코드를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘.{get_effective_context()}"
+    if st.button("⚡ 코드 성능 최적화"):
+        st.session_state.user_triggered_prompt = f"아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{get_effective_context()}"
 
     st.divider()
     col_new, col_clear = st.columns(2)
@@ -149,38 +147,35 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.subheader("💾 현재 작업 다운로드 (개별 보관용)")
+    st.subheader("💾 현재 작업 다운로드")
     if current_messages:
         curr_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
         md_text = f"# 💻 AI 코딩 워크벤치 - [{curr_title}]\n\n"
         for m in current_messages:
             role_icon = "🧑‍💻 User" if m["role"] == "user" else "🤖 AI Assistant"
             md_text += f"### {role_icon}\n{m['content']}\n\n---\n\n"
-        st.download_button("📝 현재 대화 내역 마크다운 저장 (.md)", data=md_text, file_name=f"{curr_title}_backup.md", mime="text/markdown")
+        st.download_button("📝 마크다운 저장 (.md)", data=md_text, file_name=f"{curr_title}_backup.md", mime="text/markdown")
 
     st.divider()
-    st.subheader("☁️ 전체 작업 동기화 (클라우드 복구용)")
+    st.subheader("☁️ 전체 작업 동기화")
     history_json = json.dumps(st.session_state.chat_sessions, ensure_ascii=False, indent=2)
-    st.download_button("📥 전체 내역 백업 (.json)", data=history_json, file_name="workbench_all_backup.json", mime="application/json")
+    st.download_button("📥 전체 백업 (.json)", data=history_json, file_name="workbench_all_backup.json", mime="application/json")
     
-    uploaded_history = st.file_uploader("📤 백업 파일 복구 (.json)", type=["json"])
+    uploaded_history = st.file_uploader("📤 백업 복구 (.json)", type=["json"])
     if uploaded_history is not None:
         try:
             loaded_data = json.load(uploaded_history)
             if isinstance(loaded_data, list) and len(loaded_data) > 0 and "messages" in loaded_data[0]:
-                if st.button("🚨 이 파일로 덮어쓰기"):
+                if st.button("🚨 덮어쓰기 복구"):
                     st.session_state.chat_sessions = loaded_data
                     st.session_state.current_session_idx = 0
                     save_history(st.session_state.chat_sessions)
                     st.rerun()
         except Exception:
-            st.error("파일을 읽는 중 오류가 발생했습니다.")
+            pass
 
     history_placeholder = st.empty()
 
-# ==========================================
-# 4. 사이드바 히스토리 즉시 렌더링 함수
-# ==========================================
 def draw_sidebar_history():
     with history_placeholder.container():
         st.divider()
@@ -197,7 +192,7 @@ def draw_sidebar_history():
                     st.session_state.current_session_idx = idx
                     st.rerun()
             with col_del:
-                if st.button("🗑️", key=f"del_btn_{idx}", help="이 작업 삭제하기"):
+                if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
                     sessions_to_delete.append(idx)
 
         if sessions_to_delete:
@@ -213,13 +208,13 @@ def draw_sidebar_history():
             st.rerun()
 
 # ==========================================
-# 5. 메인 화면 UI
+# 4. 메인 화면 UI
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
 
 uploaded_file = st.file_uploader(
-    "📂 소스 코드 캡처 또는 파일 업로드", 
+    "📂 소스 코드 또는 에러 캡처 파일 업로드", 
     type=['png', 'jpg', 'jpeg', 'txt', 'py', 'json', 'csv', 'js', 'html', 'css', 'sql'],
     key=f"file_uploader_{st.session_state.current_session_idx}"
 )
@@ -228,8 +223,11 @@ for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-default_input = st.session_state.pop("pre_prompt", "")
-prompt = st.chat_input("에러 내용이나 질문을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}") or default_input
+# 입력 처리 통합 (채팅창 입력 또는 숏컷 버튼 클릭)
+chat_input_val = st.chat_input("에러 내용이나 질문을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}")
+triggered_prompt = st.session_state.pop("user_triggered_prompt", None)
+
+prompt = chat_input_val if chat_input_val else triggered_prompt
 
 if prompt:
     if not current_messages:
@@ -259,23 +257,19 @@ if prompt:
         else:
             file_text = f"\n\n[첨부 파일 '{uploaded_file.name}']\n```\n{uploaded_file.getvalue().decode('utf-8')}\n```"
 
-    # ==========================================
-    # [수정 핵심] 에러 분석 및 답변 규칙 보완
-    # ==========================================
     stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
     
     coding_system_rule = (
-        f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 디버깅 전문 AI야.{stack_instruction}\n"
-        "사용자가 에러 로그나 코드 버그를 제시하면 반드시 다음을 수행해:\n"
-        "1. **에러 원인 분석**: 왜 이 에러가 발생했는지 초보자도 이해하기 쉽게 핵심을 설명해.\n"
-        "2. **즉시 수정된 코드 제공**: 에러를 해결한 완성된 수정 코드를 코드 블록으로 제공해.\n"
-        "3. **적용 가이드**: 기존 파일의 어디를 고쳐야 하는지 짧고 명확하게 알려줘.\n"
+        f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 디버깅/프로그래밍 전문 AI야.{stack_instruction}\n"
+        "사용자가 에러 로그나 코드 버그, 혹은 프로그래밍 관련 질문을 제시하면 성심성의껏 분석하고 해결책을 제시해 줘.\n"
+        "1. 에러나 버그인 경우: 원인을 분석하고 즉시 수정된 코드와 적용 가이드를 제공해.\n"
+        "2. 개념 질문인 경우: 초보자도 쉽게 이해할 수 있도록 친절하게 설명해.\n"
         f"{chat_history_context}\n"
         f"[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
     )
 
     # ==========================================
-    # 6. 모델 호출 및 메타데이터 추적 엔진
+    # 5. 모델 호출 엔진
     # ==========================================
     def run_gemini(inputs):
         for model_name in st.session_state.gemini_model_list:
@@ -308,7 +302,7 @@ if prompt:
     try:
         if ai_mode.startswith("⚡ Gemini"):
             with st.chat_message("assistant"):
-                with st.spinner("Gemini가 에러를 분석 중입니다..."):
+                with st.spinner("Gemini가 분석 중입니다..."):
                     text, m_name = run_gemini(input_data)
                     st.markdown(f"### ⚡ {m_name}\n{text}")
                     render_metadata_expander(m_name, target_stack)
@@ -316,7 +310,7 @@ if prompt:
 
         elif ai_mode.startswith("🚀 Groq: Llama"):
             with st.chat_message("assistant"):
-                with st.spinner("Llama가 에러를 분석 중입니다..."):
+                with st.spinner("Llama가 분석 중입니다..."):
                     text, m_id = run_groq(coding_system_rule, "llama")
                     st.markdown(f"### 🚀 {m_id}\n{text}")
                     render_metadata_expander(m_id, target_stack)
@@ -324,7 +318,7 @@ if prompt:
 
         elif ai_mode.startswith("🧠 Groq: DeepSeek"):
             with st.chat_message("assistant"):
-                with st.spinner("DeepSeek가 에러를 정밀 추론 중입니다..."):
+                with st.spinner("DeepSeek가 추론 중입니다..."):
                     text, m_id = run_groq(coding_system_rule, "deepseek")
                     st.markdown(f"### 🧠 {m_id}\n{text}")
                     render_metadata_expander(m_id, target_stack)
@@ -358,27 +352,24 @@ if prompt:
             col1, col2 = st.columns(2)
             with col1:
                 with st.chat_message("assistant"):
-                    with st.spinner("🧠 DeepSeek 디버깅 중..."):
+                    with st.spinner("🧠 DeepSeek 분석 중..."):
                         res_ds, ds_name = run_groq(coding_system_rule, "deepseek")
                         st.markdown(f"### 🧠 {ds_name} 초안\n{res_ds}")
             with col2:
                 with st.chat_message("assistant"):
-                    with st.spinner("🚀 Llama 디버깅 중..."):
+                    with st.spinner("🚀 Llama 분석 중..."):
                         res_llama, llama_name = run_groq(coding_system_rule, "llama")
                         st.markdown(f"### 🚀 {llama_name} 초안\n{res_llama}")
                             
             st.divider()
             
             with st.chat_message("assistant"):
-                with st.spinner("🧑‍💻 수석 엔지니어(AI)가 에러 해결 합의안을 작성 중입니다..."):
+                with st.spinner("🧑‍💻 수석 엔지니어(AI)가 최종 합의안을 작성 중입니다..."):
                     consensus_prompt = (
-                        f"사용자의 에러 요청: {prompt}{file_text}\n\n"
+                        f"사용자의 요청: {prompt}{file_text}\n\n"
                         f"--- AI 1 (DeepSeek) 초안 ---\n{res_ds}\n\n"
                         f"--- AI 2 (Llama) 초안 ---\n{res_llama}\n\n"
-                        "너는 수석 디버깅 아키텍트야. 두 에러 분석을 검토하고 가장 완벽한 '최종 해결 코드'를 만들어줘.\n"
-                        "### 📊 에러 원인 및 채택 분석\n(원인과 장점 요약)\n"
-                        "### 🏆 최종 수정 코드\n(코드)\n"
-                        "### 📝 적용 가이드\n(수정 위치 안내)"
+                        "두 AI의 답변을 검토하여 가장 정확하고 완벽한 최종 답변을 작성해 줘."
                     )
                     res_final, final_name = run_groq(consensus_prompt, "llama")
                     st.markdown(res_final)
@@ -388,7 +379,7 @@ if prompt:
                     combined_log = (
                         f"**[🧠 DeepSeek 초안]**\n\n{res_ds}\n\n---\n\n"
                         f"**[🚀 Llama 초안]**\n\n{res_llama}\n\n---\n\n"
-                        f"**[🏆 최종 디버깅 합의안]**\n\n{res_final}"
+                        f"**[🏆 최종 합의안]**\n\n{res_final}"
                     )
                     current_messages.append({"role": "assistant", "content": combined_log})
                     
