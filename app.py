@@ -96,8 +96,8 @@ current_messages = st.session_state.chat_sessions[st.session_state.current_sessi
 
 if "groq_quota" not in st.session_state:
     st.session_state.groq_quota = {
-        "remaining_requests": "대기중",
-        "remaining_tokens": "대기중",
+        "remaining_requests": "확인 전",
+        "remaining_tokens": "확인 전",
         "reset_tokens": "-",
         "tpd_wait_time": None
     }
@@ -109,13 +109,20 @@ if "gemini_quota" not in st.session_state:
     }
 
 # ==========================================
-# 3. 사이드바 설정 (라디오 옆에 상태 실시간 표기)
+# 3. 사이드바 설정 (라디오 옆에 남은 횟수/토큰 상세 표기)
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
+    g_req = st.session_state.groq_quota['remaining_requests']
+    g_tok = st.session_state.groq_quota['remaining_tokens']
     g_wait = st.session_state.groq_quota['tpd_wait_time']
-    groq_status_label = f"🚨 제한중 ({g_wait} 남음)" if g_wait else "✅ 사용 가능"
+    
+    if g_wait:
+        groq_status_label = f"🚨 제한중 ({g_wait} 남음)"
+    else:
+        groq_status_label = f"✅ 잔여요청:{g_req}회 | 남은토큰:{g_tok}"
+
     gem_status_label = "✅ 사용 가능"
 
     ai_mode_options = {
