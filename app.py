@@ -109,38 +109,33 @@ if "gemini_quota" not in st.session_state:
     }
 
 # ==========================================
-# 3. 사이드바 설정 (라디오 바로 밑에 실시간 Quota 배치)
+# 3. 사이드바 설정 (라디오 옆에 상태 실시간 표기)
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    ai_mode = st.radio(
+    # 상태 텍스트 구성
+    g_wait = st.session_state.groq_quota['tpd_wait_time']
+    groq_status_label = f"🚨 제한중 ({g_wait} 남음)" if g_wait else "✅ 사용 가능"
+    gemini_status_label = "✅ 사용 가능"
+
+    ai_mode_options = {
+        f"⚡ Gemini (무한 자동 교체) [{gem_status_label}]": "gemini",
+        f"🚀 Groq: Llama [{groq_status_label}]": "llama",
+        f"🧠 Groq: DeepSeek [{groq_status_label}]": "deepseek",
+        f"🌪️ Groq: Mixtral [{groq_status_label}]": "mixtral",
+        f"🔥 [비교] Gemini vs Llama": "compare_gem_llama",
+        f"🤝 [비교+합의] DeepSeek vs Llama": "consensus"
+    }
+
+    selected_label = st.radio(
         "사용할 무료 AI 엔진 선택:",
-        [
-            "⚡ Gemini (무한 자동 교체)", 
-            "🚀 Groq: Llama (범용 고성능)",
-            "🧠 Groq: DeepSeek (코딩/추론 특화)",
-            "🌪️ Groq: Mixtral (빠른 속도)",
-            "🔥 [비교] Gemini vs Groq Llama",
-            "🤝 [비교+합의] Groq DeepSeek vs Llama"
-        ],
+        list(ai_mode_options.keys()),
         index=0
     )
-
-    # [핵심] 사용자가 요청한 대로 라디오 버튼 바로 밑에 한눈에 보이도록 배치
-    g_req = st.session_state.groq_quota['remaining_requests']
-    g_tok = st.session_state.groq_quota['remaining_tokens']
-    g_wait = st.session_state.groq_quota['tpd_wait_time']
-    g_wait_str = f"🚨 {g_wait} 남음" if g_wait else "✅ 여유 있음 (정상)"
-
-    st.markdown("---")
-    st.markdown("### 📊 실시간 Quota & 리셋 현황")
-    st.info(
-        f"**⚡ Gemini:** `{st.session_state.gemini_quota['status']}`\n\n"
-        f"**🚀 Groq 남은 요청(RPD):** `{g_req}`\n"
-        f"**🧠 Groq 남은 토큰(TPM):** `{g_tok}`\n"
-        f"**⏳ Groq 리셋 대기시간:** `{g_wait_str}`"
-    )
+    
+    # 선택된 옵션의 내부 키 매핑
+    ai_mode = ai_mode_options[selected_label]
 
     st.divider()
     st.subheader("🎯 주력 기술 스택 설정")
@@ -352,7 +347,7 @@ if prompt:
                 st.markdown(f"- **적용 기술 스택:** `{stack_info}`")
                 st.markdown(f"- **대화 문맥 유지:** `{'활성화' if use_memory else '비활성화'}`")
 
-        if ai_mode.startswith("⚡ Gemini"):
+        if ai_mode == "gemini":
             with st.chat_message("assistant"):
                 with st.spinner("Gemini가 분석 중입니다..."):
                     text, m_name = run_gemini(system_instruction, user_content_text, image_data)
@@ -360,7 +355,7 @@ if prompt:
                     render_metadata_expander(m_name, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_name}]**\n\n{text}"})
 
-        elif ai_mode.startswith("🚀 Groq: Llama"):
+        elif ai_mode == "llama":
             with st.chat_message("assistant"):
                 with st.spinner("Llama가 분석 중입니다..."):
                     text, m_id = run_groq(system_instruction, user_content_text, "llama")
@@ -368,7 +363,7 @@ if prompt:
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
 
-        elif ai_mode.startswith("🧠 Groq: DeepSeek"):
+        elif ai_mode == "deepseek":
             with st.chat_message("assistant"):
                 with st.spinner("DeepSeek가 추론 중입니다..."):
                     text, m_id = run_groq(system_instruction, user_content_text, "deepseek")
@@ -376,7 +371,7 @@ if prompt:
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
 
-        elif ai_mode.startswith("🌪️ Groq: Mixtral"):
+        elif ai_mode == "mixtral":
             with st.chat_message("assistant"):
                 with st.spinner("Mixtral이 분석 중입니다..."):
                     text, m_id = run_groq(system_instruction, user_content_text, "mixtral")
@@ -384,7 +379,7 @@ if prompt:
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
 
-        elif ai_mode.startswith("🔥 [비교]"):
+        elif ai_mode == "compare_gem_llama":
             col1, col2 = st.columns(2)
             with col1:
                 with st.chat_message("assistant"):
@@ -399,7 +394,7 @@ if prompt:
             render_metadata_expander(f"{gem_name} vs {groq_name}", target_stack)
             current_messages.append({"role": "assistant", "content": f"**[{gem_name}]**\n\n{res_gem}\n\n---\n\n**[{groq_name}]**\n\n{res_groq}"})
 
-        elif ai_mode.startswith("🤝 [비교+합의]"):
+        elif ai_mode == "consensus":
             col1, col2 = st.columns(2)
             with col1:
                 with st.chat_message("assistant"):
