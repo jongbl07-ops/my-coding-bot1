@@ -109,7 +109,8 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🎯 주력 기술 스택 설정")
-    target_stack = st.selectbox("타겟 언어/프레임워크:", ["General (자동 감지)", "Python / Django", "JavaScript / React", "Java / Spring Boot", "C++ / Rust", "SQL"])
+    # [수정] JavaScript / Node.js 옵션 추가
+    target_stack = st.selectbox("타겟 언어/프레임워크:", ["General (자동 감지)", "JavaScript / Node.js", "Python / FastAPI", "React / Frontend", "Java / Spring Boot", "C++ / Rust", "SQL / Database"])
     
     st.subheader("⚙️ 고급 동작 설정")
     no_yap_mode = st.toggle("🤫 설명 생략 (No Yapping) 모드", value=False)
@@ -127,8 +128,8 @@ with st.sidebar:
 
     if st.button("❓ 개념/원리 질문하기"):
         st.session_state.user_triggered_prompt = f"아래 내용에 대해 코딩 초보자도 이해하기 쉽게 비유를 들어서 개념과 원리를 친절하게 설명해 줘.{get_effective_context()}"
-    if st.button("🐛 에러 분석 및 디버깅"):
-        st.session_state.user_triggered_prompt = f"아래 에러나 코드를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘.{get_effective_context()}"
+    if st.button("🐛 에러 로그 분석 및 디버깅"):
+        st.session_state.user_triggered_prompt = f"아래 에러 로그나 코드 버그를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘.{get_effective_context()}"
     if st.button("⚡ 코드 성능 최적화"):
         st.session_state.user_triggered_prompt = f"아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{get_effective_context()}"
 
@@ -214,7 +215,7 @@ current_title = st.session_state.chat_sessions[st.session_state.current_session_
 st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
 
 uploaded_file = st.file_uploader(
-    "📂 소스 코드 또는 에러 캡처 파일 업로드", 
+    "📂 소스 코드 또는 에러 로그 파일/이미지 업로드", 
     type=['png', 'jpg', 'jpeg', 'txt', 'py', 'json', 'csv', 'js', 'html', 'css', 'sql'],
     key=f"file_uploader_{st.session_state.current_session_idx}"
 )
@@ -223,8 +224,7 @@ for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 입력 처리 통합 (채팅창 입력 또는 숏컷 버튼 클릭)
-chat_input_val = st.chat_input("에러 내용이나 질문을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}")
+chat_input_val = st.chat_input("Node.js 에러 로그나 프로그래밍 질문을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}")
 triggered_prompt = st.session_state.pop("user_triggered_prompt", None)
 
 prompt = chat_input_val if chat_input_val else triggered_prompt
@@ -259,11 +259,12 @@ if prompt:
 
     stack_instruction = f" target 기술 스택: [{target_stack}]." if target_stack != "General (자동 감지)" else ""
     
+    # [수정 핵심] Node.js, Python, 자바스크립트 등 모든 언어의 에러 로그와 질문을 완벽 분석하도록 확장된 프롬프트
     coding_system_rule = (
-        f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 디버깅/프로그래밍 전문 AI야.{stack_instruction}\n"
-        "사용자가 에러 로그나 코드 버그, 혹은 프로그래밍 관련 질문을 제시하면 성심성의껏 분석하고 해결책을 제시해 줘.\n"
-        "1. 에러나 버그인 경우: 원인을 분석하고 즉시 수정된 코드와 적용 가이드를 제공해.\n"
-        "2. 개념 질문인 경우: 초보자도 쉽게 이해할 수 있도록 친절하게 설명해.\n"
+        f"너는 세계 최고 수준의 수석 소프트웨어 엔지니어이자 다국어 디버깅/프로그래밍 전문 AI야.{stack_instruction}\n"
+        "사용자가 Python, JavaScript, Node.js, HTML/CSS 등의 소스 코드나 터미널 에러 로그(예: SyntaxError, ReferenceError 등)를 제시하거나 프로그래밍 질문을 하면 절대 무시하지 말고 완벽하게 분석해 줘.\n"
+        "1. **에러 로그 분석 요청인 경우**: 어떤 언어/환경(예: Node.js 등)인지 파악하고, 왜 이 에러가 발생했는지 원인과 **정확한 수정 코드**를 제공해 줘.\n"
+        "2. **개념/원리 질문인 경우**: 초보자도 이해하기 쉽게 비유를 들어 친절하게 설명해 줘.\n"
         f"{chat_history_context}\n"
         f"[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
     )
@@ -369,7 +370,7 @@ if prompt:
                         f"사용자의 요청: {prompt}{file_text}\n\n"
                         f"--- AI 1 (DeepSeek) 초안 ---\n{res_ds}\n\n"
                         f"--- AI 2 (Llama) 초안 ---\n{res_llama}\n\n"
-                        "두 AI의 답변을 검토하여 가장 정확하고 완벽한 최종 답변을 작성해 줘."
+                        "두 AI의 답변을 검토하여 가장 정확하고 완벽한 최종 해결책을 작성해 줘."
                     )
                     res_final, final_name = run_groq(consensus_prompt, "llama")
                     st.markdown(res_final)
