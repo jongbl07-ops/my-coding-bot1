@@ -96,20 +96,20 @@ current_messages = st.session_state.chat_sessions[st.session_state.current_sessi
 
 if "groq_quota" not in st.session_state:
     st.session_state.groq_quota = {
-        "remaining_requests": "Groq 사용 전 (대기중)",
-        "remaining_tokens": "Groq 사용 전 (대기중)",
+        "remaining_requests": "대기중",
+        "remaining_tokens": "대기중",
         "reset_tokens": "-",
-        "tpd_wait_time": None  # 일일 제한 해제까지 남은 시간 텍스트
+        "tpd_wait_time": None
     }
 
 if "gemini_quota" not in st.session_state:
     st.session_state.gemini_quota = {
-        "status": "정상 작동 중 (Free Tier)",
+        "status": "정상 (Free)",
         "last_checked": "방금 전"
     }
 
 # ==========================================
-# 3. 사이드바 설정 및 히스토리 렌더링
+# 3. 사이드바 설정 및 실시간 대시보드 렌더링
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -129,22 +129,22 @@ with st.sidebar:
 
     st.divider()
 
-    if "Gemini" in ai_mode:
-        st.success(
-            f"⚡ **Google Gemini 실시간 상태**\n"
-            f"- 상태: `{st.session_state.gemini_quota['status']}`\n"
-            f"- 제한 기준: 분당 15회 / 일당 1,500회\n"
-            f"- 마지막 확인: `{st.session_state.gemini_quota['last_checked']}`"
-        )
-    else:
-        wait_msg = st.session_state.groq_quota['tpd_wait_time']
-        wait_display = f"🚨 **{wait_msg} 뒤 해제**" if wait_msg else "✅ 여유 있음 (정상)"
-        st.info(
-            f"📊 **Groq 실시간 Quota (잔여량)**\n"
-            f"- 남은 요청수(RPD): `{st.session_state.groq_quota['remaining_requests']}`\n"
-            f"- 남은 토큰(TPM): `{st.session_state.groq_quota['remaining_tokens']}`\n"
-            f"- 하루 한도(TPD) 대기: `{wait_display}`"
-        )
+    # [신규] 입력하지 않아도 한눈에 보이는 실시간 쿼터 대시보드 박스
+    st.subheader("📊 실시간 엔진별 Quota 현황")
+    
+    g_req = st.session_state.groq_quota['remaining_requests']
+    g_tok = st.session_state.groq_quota['remaining_tokens']
+    g_wait = st.session_state.groq_quota['tpd_wait_time']
+    g_wait_str = f"🚨 {g_wait} 남음" if g_wait else "✅ 여유 있음"
+
+    st.markdown(
+        f"""
+        - **⚡ Gemini 상태:** `{st.session_state.gemini_quota['status']}`  
+        - **🚀 Groq 남은 요청(RPD):** `{g_req}`  
+        - **🧠 Groq 남은 토큰(TPM):** `{g_tok}`  
+        - **⏳ Groq 하루한도 대기:** `{g_wait_str}`  
+        """
+    )
 
     st.divider()
     st.subheader("🎯 주력 기술 스택 설정")
@@ -223,15 +223,15 @@ with st.sidebar:
             if st.button("🗑️", key=f"del_btn_{idx}", help="삭제"):
                 sessions_to_delete.append(idx)
 
-    if sessions_to_delete:
-        for idx in sorted(sessions_to_delete, reverse=True):
-            if len(st.session_state.chat_sessions) > 1:
-                st.session_state.chat_sessions.pop(idx)
-                if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
-                    st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
-            else:
-                st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
-                st.session_state.current_session_idx = 0
+        if sessions_to_delete:
+            for idx in sorted(sessions_to_delete, reverse=True):
+                if len(st.session_state.chat_sessions) > 1:
+                    st.session_state.chat_sessions.pop(idx)
+                    if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
+                        st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
+                else:
+                    st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
+                    st.session_state.current_session_idx = 0
             save_history(st.session_state.chat_sessions)
             st.rerun()
 
@@ -302,7 +302,7 @@ if prompt:
                 try:
                     res = genai.GenerativeModel(model_name).generate_content(contents)
                     st.session_state.gemini_quota = {
-                        "status": "정상 작동 중 (Free Tier)",
+                        "status": "정상 (Free)",
                         "last_checked": time.strftime('%H:%M:%S')
                     }
                     return res.text, f"Google Gemini API ({model_name.split('/')[-1]})"
@@ -336,7 +336,6 @@ if prompt:
             
             except Exception as api_err:
                 err_str = str(api_err)
-                # 429 에러 메시지에서 "Please try again in XXs" 패턴 추출
                 match = re.search(r'Please try again in ([0-9ms.]+)', err_str)
                 wait_time_str = match.group(1) if match else "잠시 후"
 
