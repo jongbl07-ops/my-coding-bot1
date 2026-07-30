@@ -3,15 +3,31 @@ import google.generativeai as genai
 from openai import OpenAI
 from PIL import Image
 import json
+import os
 
 # 페이지 설정
 st.set_page_config(page_title="100% 무료 전문 코딩 AI 워크벤치", page_icon="💻", layout="wide")
 
 # ==========================================
-# 0. 세션 초기화용 기본 함수
+# 0. 자동 저장 및 복구(JSON) 로직 (평상시 화면 유지용)
 # ==========================================
-def get_default_history():
+HISTORY_FILE = "auto_save_history.json"
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return [{"title": "새로운 코딩 작업", "messages": []}]
+
+def save_history(sessions):
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(sessions, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 # ==========================================
 # 1. API 키 설정 및 실시간 모델 동적 검색
@@ -57,22 +73,21 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 2. 세션 상태 초기화 (내역 유지)
+# 2. 세션 상태 초기화 (자동 저장된 내역 불러오기)
 # ==========================================
 if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = get_default_history()
+    st.session_state.chat_sessions = load_history()
 
 if "current_session_idx" not in st.session_state:
     st.session_state.current_session_idx = 0
 
-# 인덱스 방어
 if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
     st.session_state.current_session_idx = max(0, len(st.session_state.chat_sessions) - 1)
 
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
 # ==========================================
-# 3. 사이드바 (설정, 숏컷, 백업/복구 및 마크다운)
+# 3. 사이드바 (설정, 숏컷, 백업/복구)
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -97,10 +112,9 @@ with st.sidebar:
     target_stack = st.selectbox("타겟 언어/프레임워크:", ["General (자동 감지)", "Python / Django", "JavaScript / React", "Java / Spring Boot", "C++ / Rust", "SQL"])
     
     st.subheader("⚙️ 고급 동작 설정")
-    no_yap_mode = st.toggle("🤫 설명 생략 (No Yapping) 모드", value=False, help="불필요한 설명 없이 오직 코드와 채택 내역만 출력합니다.")
-    use_memory = st.toggle("🧠 이전 대화 문맥 유지", value=True, help="체크 해제 시 이전 질문을 무시하고 현재 질문에만 답변합니다.")
+    no_yap_mode = st.toggle("🤫 설명 생략 (No Yapping) 모드", value=False)
+    use_memory = st.toggle("🧠 이전 대화 문맥 유지", value=True)
 
-    # [복구] 4가지 개발자 퀵 숏컷
     st.divider()
     st.subheader("🛠️ 개발자 퀵 숏컷")
     
@@ -125,14 +139,15 @@ with st.sidebar:
     if col_new.button("➕ 새 작업"):
         st.session_state.chat_sessions.append({"title": f"작업 {len(st.session_state.chat_sessions) + 1}", "messages": []})
         st.session_state.current_session_idx = len(st.session_state.chat_sessions) - 1
+        save_history(st.session_state.chat_sessions) # 자동 저장
         st.rerun()
 
     if col_clear.button("🧹 화면 지우기"):
         st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"] = []
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = "새로운 코딩 작업"
+        save_history(st.session_state.chat_sessions) # 자동 저장
         st.rerun()
 
-    # [복구] 1. 개별 작업 마크다운(.md) 저장 기능
     st.divider()
     st.subheader("💾 현재 작업 다운로드 (개별 보관용)")
     if current_messages:
@@ -142,23 +157,22 @@ with st.sidebar:
             role_icon = "🧑‍💻 User" if m["role"] == "user" else "🤖 AI Assistant"
             md_text += f"### {role_icon}\n{m['content']}\n\n---\n\n"
         st.download_button("📝 현재 대화 내역 마크다운 저장 (.md)", data=md_text, file_name=f"{curr_title}_backup.md", mime="text/markdown")
-    else:
-        st.caption("저장할 대화 내용이 없습니다.")
 
-    # [유지] 2. 전체 작업 클라우드 동기화(.json) 기능
     st.divider()
     st.subheader("☁️ 전체 작업 동기화 (클라우드 복구용)")
+    st.caption("며칠 뒤 앱이 절전 모드에 들어가서 히스토리가 날아갔을 때만 사용하세요.")
     history_json = json.dumps(st.session_state.chat_sessions, ensure_ascii=False, indent=2)
-    st.download_button("📥 전체 작업 내역 백업 (.json)", data=history_json, file_name="workbench_all_backup.json", mime="application/json")
+    st.download_button("📥 전체 내역 백업 (.json)", data=history_json, file_name="workbench_all_backup.json", mime="application/json")
     
-    uploaded_history = st.file_uploader("📤 백업 파일 올려서 복구 (.json)", type=["json"])
+    uploaded_history = st.file_uploader("📤 백업 파일 복구 (.json)", type=["json"])
     if uploaded_history is not None:
         try:
             loaded_data = json.load(uploaded_history)
             if isinstance(loaded_data, list) and len(loaded_data) > 0 and "messages" in loaded_data[0]:
-                if st.button("🚨 이 파일로 전체 기록 덮어쓰기"):
+                if st.button("🚨 이 파일로 덮어쓰기"):
                     st.session_state.chat_sessions = loaded_data
                     st.session_state.current_session_idx = 0
+                    save_history(st.session_state.chat_sessions) # 덮어쓴 후 자동 저장
                     st.rerun()
         except Exception:
             st.error("파일을 읽는 중 오류가 발생했습니다.")
@@ -197,6 +211,7 @@ def draw_sidebar_history():
                 else:
                     st.session_state.chat_sessions[0] = {"title": "새로운 코딩 작업", "messages": []}
                     st.session_state.current_session_idx = 0
+            save_history(st.session_state.chat_sessions) # 삭제 후 자동 저장
             st.rerun()
 
 # ==========================================
@@ -211,7 +226,6 @@ uploaded_file = st.file_uploader(
     key=f"file_uploader_{st.session_state.current_session_idx}"
 )
 
-# 기존 대화 렌더링
 for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -220,14 +234,14 @@ default_input = st.session_state.pop("pre_prompt", "")
 prompt = st.chat_input("구현할 코드나 해결할 에러 내용을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}") or default_input
 
 if prompt:
-    # 1. 새 질문이 들어오면 즉시 제목 업데이트
+    # 1. 새 질문이 들어오면 즉시 제목 업데이트 및 자동 저장
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
+        save_history(st.session_state.chat_sessions)
 
     # 2. 바뀐 제목으로 사이드바 즉시 다시 그리기
     draw_sidebar_history()
 
-    # 3. 입력된 질문 화면 출력 및 저장
     with st.chat_message("user"):
         st.markdown(prompt)
     
@@ -240,8 +254,8 @@ if prompt:
             chat_history_context += f"{role_name}: {m['content']}\n"
             
     current_messages.append({"role": "user", "content": prompt})
+    save_history(st.session_state.chat_sessions) # 질문 추가 시 자동 저장
 
-    # [수정] SyntaxError를 방지하도록 문자열 따옴표 완벽하게 닫음
     file_text, image_data = "", None
     if uploaded_file:
         if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg')):
@@ -292,7 +306,6 @@ if prompt:
     input_data = [coding_system_rule] + ([image_data] if image_data else [])
 
     try:
-        # 단일 모델 실행 분기
         if ai_mode.startswith("⚡ Gemini"):
             with st.chat_message("assistant"):
                 with st.spinner("Gemini 분석 중..."):
@@ -325,7 +338,6 @@ if prompt:
                     render_metadata_expander(m_id, target_stack)
                     current_messages.append({"role": "assistant", "content": f"**[{m_id}]**\n\n{text}"})
 
-        # 비교 모드 실행 분기
         elif ai_mode.startswith("🔥 [비교]"):
             col1, col2 = st.columns(2)
             with col1:
@@ -342,7 +354,6 @@ if prompt:
             render_metadata_expander(f"{gem_name} vs {groq_name}", target_stack)
             current_messages.append({"role": "assistant", "content": f"**[{gem_name}]**\n\n{res_gem}\n\n---\n\n**[{groq_name}]**\n\n{res_groq}"})
 
-        # 합의 모드 실행 분기
         elif ai_mode.startswith("🤝 [비교+합의]"):
             col1, col2 = st.columns(2)
             with col1:
@@ -387,9 +398,10 @@ if prompt:
     except Exception as e:
         st.error(f"오류 발생: {e}")
 
-    # 모든 처리가 끝나면 화면을 리렌더링
+    # 답변 완료 후 자동 저장 및 화면 리렌더링
+    save_history(st.session_state.chat_sessions)
     st.rerun()
 
 else:
-    # 질문을 하지 않은 대기 상태일 때 히스토리를 그려줍니다.
+    # 대기 상태일 때 사이드바 히스토리 출력
     draw_sidebar_history()
