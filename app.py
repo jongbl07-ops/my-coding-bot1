@@ -114,10 +114,10 @@ if "gemini_quota" not in st.session_state:
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
     
-    # 상태 텍스트 구성
+    # [수정] 상태 변수들을 라디오 딕셔너리보다 반드시 위에 선언
     g_wait = st.session_state.groq_quota['tpd_wait_time']
     groq_status_label = f"🚨 제한중 ({g_wait} 남음)" if g_wait else "✅ 사용 가능"
-    gemini_status_label = "✅ 사용 가능"
+    gem_status_label = "✅ 사용 가능"
 
     ai_mode_options = {
         f"⚡ Gemini (무한 자동 교체) [{gem_status_label}]": "gemini",
@@ -134,7 +134,6 @@ with st.sidebar:
         index=0
     )
     
-    # 선택된 옵션의 내부 키 매핑
     ai_mode = ai_mode_options[selected_label]
 
     st.divider()
