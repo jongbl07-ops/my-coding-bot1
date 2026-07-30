@@ -87,7 +87,7 @@ if st.session_state.current_session_idx >= len(st.session_state.chat_sessions):
 current_messages = st.session_state.chat_sessions[st.session_state.current_session_idx]["messages"]
 
 # ==========================================
-# 3. 사이드바 (설정, 숏컷, 백업/복구)
+# 3. 사이드바 설정
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -117,20 +117,13 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🛠️ 개발자 퀵 숏컷")
-    
-    def get_effective_context():
-        if not current_messages: return ""
-        for msg in reversed(current_messages):
-            if "분석할 대상 소스 코드" in msg["content"] or "코딩 전용 AI 비서입니다" in msg["content"]: continue
-            return f"\n\n[참고할 이전 대화]\n{msg['content']}"
-        return ""
 
     if st.button("❓ 개념/원리 질문하기"):
-        st.session_state.user_triggered_prompt = f"아래 내용에 대해 코딩 초보자도 이해하기 쉽게 비유를 들어서 개념과 원리를 친절하게 설명해 줘.{get_effective_context()}"
+        st.session_state.quick_prompt = "아래 내용에 대해 코딩 초보자도 이해하기 쉽게 비유를 들어서 개념과 원리를 친절하게 설명해 줘."
     if st.button("🐛 에러 로그 분석 및 디버깅"):
-        st.session_state.user_triggered_prompt = f"아래 에러 로그나 코드 버그를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘.{get_effective_context()}"
+        st.session_state.quick_prompt = "아래 에러 로그나 코드 버그를 분석해서, 원인이 무엇이고 어떻게 수정해야 하는지 정확한 수정 코드와 함께 설명해 줘."
     if st.button("⚡ 코드 성능 최적화"):
-        st.session_state.user_triggered_prompt = f"아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘.{get_effective_context()}"
+        st.session_state.quick_prompt = "아래 코드의 성능을 높이고 가독성을 좋게 리팩토링해 줘."
 
     st.divider()
     col_new, col_clear = st.columns(2)
@@ -207,8 +200,10 @@ def draw_sidebar_history():
             save_history(st.session_state.chat_sessions)
             st.rerun()
 
+draw_sidebar_history()
+
 # ==========================================
-# 4. 메인 화면 UI
+# 4. 메인 화면 UI (안정적인 텍스트 박스 + 전송 버튼 방식)
 # ==========================================
 current_title = st.session_state.chat_sessions[st.session_state.current_session_idx]["title"]
 st.title(f"💻 통합 AI 코딩 워크벤치 [{current_title}]")
@@ -223,17 +218,20 @@ for msg in current_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-chat_input_val = st.chat_input("Node.js 에러 로그나 프로그래밍 질문을 입력하세요.", key=f"user_input_{st.session_state.current_session_idx}")
-triggered_prompt = st.session_state.pop("user_triggered_prompt", None)
+# 숏컷 버튼으로 입력된 내용이 있다면 텍스트area 기본값으로 세팅
+default_text = st.session_state.pop("quick_prompt", "")
 
-prompt = chat_input_val if chat_input_val else triggered_prompt
+# 멈춤 현상을 완벽히 해결하는 텍스트 입력 박스 + 전송 버튼 구조
+with st.form(key=f"chat_form_{st.session_state.current_session_idx}", clear_on_submit=True):
+    user_input = st.text_area("에러 로그나 프로그래밍 질문을 입력하세요:", value=default_text, height=100)
+    submit_btn = st.form_submit_button("🚀 AI 분석 및 답변 요청하기")
 
-if prompt:
+if submit_btn and user_input.strip():
+    prompt = user_input.strip()
+    
     if not current_messages:
         st.session_state.chat_sessions[st.session_state.current_session_idx]["title"] = prompt[:15] + "..."
         save_history(st.session_state.chat_sessions)
-
-    draw_sidebar_history()
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -266,7 +264,7 @@ if prompt:
     user_content_text = f"{chat_history_context}\n[현재 사용자 요청 및 에러 로그]\n{prompt}{file_text}"
 
     # ==========================================
-    # 5. 모델 호출 엔진 (System과 User 역할을 안전하게 분리)
+    # 5. 모델 호출 엔진
     # ==========================================
     def run_gemini(sys_rule, user_text, img=None):
         contents = [sys_rule, user_text]
@@ -284,7 +282,6 @@ if prompt:
 
     def run_groq(sys_rule, user_text, target_key):
         model_id = st.session_state.groq_models_dict[target_key]
-        # [핵심 수정] 시스템 룰과 유저 메시지를 분리하여 서버 타임아웃 및 파싱 오류 방지
         response = groq_client.chat.completions.create(
             model=model_id,
             messages=[
@@ -390,6 +387,3 @@ if prompt:
 
     save_history(st.session_state.chat_sessions)
     st.rerun()
-
-else:
-    draw_sidebar_history()
