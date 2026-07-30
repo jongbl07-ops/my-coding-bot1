@@ -109,7 +109,7 @@ if "gemini_quota" not in st.session_state:
     }
 
 # ==========================================
-# 3. 사이드바 설정 및 실시간 대시보드 렌더링
+# 3. 사이드바 설정 (라디오 바로 밑에 실시간 Quota 배치)
 # ==========================================
 with st.sidebar:
     st.header("💻 코딩 작업실 설정")
@@ -127,23 +127,19 @@ with st.sidebar:
         index=0
     )
 
-    st.divider()
-
-    # [신규] 입력하지 않아도 한눈에 보이는 실시간 쿼터 대시보드 박스
-    st.subheader("📊 실시간 엔진별 Quota 현황")
-    
+    # [핵심] 사용자가 요청한 대로 라디오 버튼 바로 밑에 한눈에 보이도록 배치
     g_req = st.session_state.groq_quota['remaining_requests']
     g_tok = st.session_state.groq_quota['remaining_tokens']
     g_wait = st.session_state.groq_quota['tpd_wait_time']
-    g_wait_str = f"🚨 {g_wait} 남음" if g_wait else "✅ 여유 있음"
+    g_wait_str = f"🚨 {g_wait} 남음" if g_wait else "✅ 여유 있음 (정상)"
 
-    st.markdown(
-        f"""
-        - **⚡ Gemini 상태:** `{st.session_state.gemini_quota['status']}`  
-        - **🚀 Groq 남은 요청(RPD):** `{g_req}`  
-        - **🧠 Groq 남은 토큰(TPM):** `{g_tok}`  
-        - **⏳ Groq 하루한도 대기:** `{g_wait_str}`  
-        """
+    st.markdown("---")
+    st.markdown("### 📊 실시간 Quota & 리셋 현황")
+    st.info(
+        f"**⚡ Gemini:** `{st.session_state.gemini_quota['status']}`\n\n"
+        f"**🚀 Groq 남은 요청(RPD):** `{g_req}`\n"
+        f"**🧠 Groq 남은 토큰(TPM):** `{g_tok}`\n"
+        f"**⏳ Groq 리셋 대기시간:** `{g_wait_str}`"
     )
 
     st.divider()
